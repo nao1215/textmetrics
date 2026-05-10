@@ -115,3 +115,47 @@ pub fn to_unified_zero_context_test() {
 "
   out |> should.equal(expected)
 }
+
+// `with_old_name` / `with_new_name`: builder-style setters mirroring
+// `with_context_lines`. The original constructor uses labelled
+// arguments, so callers wanting to derive a new value from an existing
+// one previously had to call `unified_options(...)` and re-apply
+// `with_context_lines`. These setters close that asymmetry.
+
+pub fn with_old_name_overrides_old_name_test() {
+  let opts = diff.unified_options(old_name: "a", new_name: "b")
+  let updated = diff.with_old_name(opts, "renamed-a")
+  diff.old_name(updated) |> should.equal("renamed-a")
+  diff.new_name(updated) |> should.equal("b")
+}
+
+pub fn with_old_name_preserves_context_lines_test() {
+  let opts = diff.unified_options(old_name: "a", new_name: "b")
+  let assert Ok(with_ctx) = diff.with_context_lines(opts, 5)
+  let renamed = diff.with_old_name(with_ctx, "renamed-a")
+  diff.context_lines(renamed) |> should.equal(5)
+}
+
+pub fn with_new_name_overrides_new_name_test() {
+  let opts = diff.unified_options(old_name: "a", new_name: "b")
+  let updated = diff.with_new_name(opts, "renamed-b")
+  diff.old_name(updated) |> should.equal("a")
+  diff.new_name(updated) |> should.equal("renamed-b")
+}
+
+pub fn with_new_name_preserves_context_lines_test() {
+  let opts = diff.unified_options(old_name: "a", new_name: "b")
+  let assert Ok(with_ctx) = diff.with_context_lines(opts, 7)
+  let renamed = diff.with_new_name(with_ctx, "renamed-b")
+  diff.context_lines(renamed) |> should.equal(7)
+}
+
+pub fn with_old_and_new_name_compose_test() {
+  let base = diff.unified_options(old_name: "a", new_name: "b")
+  let updated =
+    base
+    |> diff.with_old_name("a-v1")
+    |> diff.with_new_name("a-v2")
+  diff.old_name(updated) |> should.equal("a-v1")
+  diff.new_name(updated) |> should.equal("a-v2")
+}

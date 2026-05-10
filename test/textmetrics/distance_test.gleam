@@ -1,5 +1,13 @@
+import gleam/float
+import gleam/list
 import gleeunit/should
 import textmetrics/distance.{LengthMismatch}
+
+const tolerance = 0.000_001
+
+fn approx_equal(a: Float, b: Float) -> Bool {
+  float.absolute_value(a -. b) <=. tolerance
+}
 
 pub fn levenshtein_kitten_sitting_test() {
   distance.levenshtein("kitten", "sitting") |> should.equal(3)
@@ -139,4 +147,63 @@ pub fn hamming_length_mismatch_test() {
   |> should.equal(Error(LengthMismatch(left: 1, right: 0)))
   distance.hamming("ab", "abc")
   |> should.equal(Error(LengthMismatch(left: 2, right: 3)))
+}
+
+// `normalized_levenshtein` is `1 - levenshtein(a, b) / max(|a|, |b|)`,
+// in `[0.0, 1.0]`, with `1.0` meaning identical. Convention for the
+// empty-vs-empty case is `1.0`.
+
+pub fn normalized_levenshtein_identical_is_one_test() {
+  distance.normalized_levenshtein("abc", "abc") |> should.equal(1.0)
+}
+
+pub fn normalized_levenshtein_empty_pair_is_one_test() {
+  distance.normalized_levenshtein("", "") |> should.equal(1.0)
+}
+
+pub fn normalized_levenshtein_disjoint_single_chars_is_zero_test() {
+  distance.normalized_levenshtein("a", "b") |> should.equal(0.0)
+}
+
+pub fn normalized_levenshtein_kitten_sitting_test() {
+  // levenshtein = 3, max graphemes = 7 → similarity = 1 - 3/7 = 4/7.
+  let s = distance.normalized_levenshtein("kitten", "sitting")
+  approx_equal(s, 4.0 /. 7.0) |> should.be_true
+}
+
+pub fn normalized_levenshtein_one_empty_is_zero_test() {
+  distance.normalized_levenshtein("", "abc") |> should.equal(0.0)
+  distance.normalized_levenshtein("abc", "") |> should.equal(0.0)
+}
+
+pub fn normalized_levenshtein_in_unit_interval_test() {
+  let pairs = [
+    #("kitten", "sitting"),
+    #("café", "cafe"),
+    #("a", "ab"),
+    #("Saturday", "Sunday"),
+    #("flaw", "lawn"),
+  ]
+  list.each(pairs, fn(p) {
+    let #(a, b) = p
+    let s = distance.normalized_levenshtein(a, b)
+    case s >=. 0.0 && s <=. 1.0 {
+      True -> Nil
+      False -> should.fail()
+    }
+  })
+}
+
+pub fn normalized_levenshtein_symmetric_test() {
+  let pairs = [
+    #("kitten", "sitting"),
+    #("CA", "ABC"),
+    #("café", "cafe"),
+    #("", "abc"),
+  ]
+  list.each(pairs, fn(p) {
+    let #(a, b) = p
+    distance.normalized_levenshtein(a, b)
+    |> should.equal(distance.normalized_levenshtein(b, a))
+  })
 }

@@ -36,6 +36,38 @@ pub fn levenshtein(a: String, b: String) -> Int {
   levenshtein_list(string.to_graphemes(a), string.to_graphemes(b))
 }
 
+/// Levenshtein-based similarity in `[0.0, 1.0]`.
+///
+/// Defined as `1.0 - levenshtein(a, b) / max(|a|, |b|)` where lengths
+/// are grapheme counts. `1.0` means identical, `0.0` means every
+/// grapheme position differs at the longer length.
+///
+/// Edge cases:
+/// - `normalized_levenshtein("", "")` = `1.0` (convention).
+/// - `normalized_levenshtein(a, a)` = `1.0`.
+/// - `normalized_levenshtein("", non_empty)` = `0.0`.
+///
+/// Use this when ranking by Levenshtein-style edit distance is
+/// preferred over Jaro / Jaro-Winkler. Time `O(m·n)`, space
+/// `O(min(m, n))` — same as [`levenshtein`](#levenshtein).
+pub fn normalized_levenshtein(a: String, b: String) -> Float {
+  let ga = string.to_graphemes(a)
+  let gb = string.to_graphemes(b)
+  let la = list.length(ga)
+  let lb = list.length(gb)
+  let max_len = case la >= lb {
+    True -> la
+    False -> lb
+  }
+  case max_len {
+    0 -> 1.0
+    _ -> {
+      let d = levenshtein_list(ga, gb)
+      1.0 -. int.to_float(d) /. int.to_float(max_len)
+    }
+  }
+}
+
 /// Generic Levenshtein distance over any equality-comparable list
 /// type. Used by `diff` internally and exposed for callers diffing
 /// token streams or AST nodes.

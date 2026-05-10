@@ -20,9 +20,28 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
   subsequence.
 - `textmetrics/diff`: Myers (1986) and patience diff plus POSIX
   unified-diff rendering with a validated `UnifiedOptions` bag.
-- `textmetrics/search`: `did_you_mean` and `rank_jaro_winkler`.
+- `textmetrics/search`: `did_you_mean`, `rank_jaro_winkler`, and
+  `closest` (single best match for "Did you mean ...?" CLI prompts).
+- `textmetrics/distance`: `normalized_levenshtein` — Levenshtein-based
+  similarity score in `[0.0, 1.0]` for ranking by edit distance
+  without rolling the formula by hand.
+- `textmetrics/diff`: `with_old_name` and `with_new_name` setters on
+  `UnifiedOptions`, mirroring `with_context_lines` for symmetric
+  builder-style overrides.
 - Spec §12 reference values, §13 axiom-style property tests, and
   Unicode reference suite all passing on Erlang and JavaScript.
+
+### Changed
+
+- `textmetrics/search.rank_jaro_winkler` now returns `List(Ranked)`,
+  where `Ranked` is a labelled record (`label: String`, `score:
+  Float`). Callers can read `r.label` / `r.score` directly instead of
+  destructuring a tuple. The previous `List(#(String, Float))` shape
+  is gone — callsites need a small update. (Pre-release breaking
+  change; the package has not been published to Hex.)
+- `textmetrics/lcs.length` now documents that it shadows
+  `gleam/list.length` when both are imported unqualified, and
+  recommends the qualified call form.
 
 ## [0.1.0] - 2026-05-10
 

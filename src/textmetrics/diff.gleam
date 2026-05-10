@@ -58,6 +58,24 @@ pub fn with_context_lines(
   }
 }
 
+/// Override the old-file label.
+pub fn with_old_name(options: UnifiedOptions, name: String) -> UnifiedOptions {
+  UnifiedOptions(
+    old_name: name,
+    new_name: options.new_name,
+    context_lines: options.context_lines,
+  )
+}
+
+/// Override the new-file label.
+pub fn with_new_name(options: UnifiedOptions, name: String) -> UnifiedOptions {
+  UnifiedOptions(
+    old_name: options.old_name,
+    new_name: name,
+    context_lines: options.context_lines,
+  )
+}
+
 /// Read the old-file label.
 pub fn old_name(options: UnifiedOptions) -> String {
   options.old_name

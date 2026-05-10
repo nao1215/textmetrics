@@ -44,6 +44,21 @@ pub fn suggest_command(typed: String) -> List(String) {
 // suggest_command("xyz")    -> []
 ```
 
+`search.closest` is the convenience form when only one suggestion is
+needed (the typical "Did you mean `X`?" path).
+
+```gleam
+import textmetrics/search
+
+pub fn one_suggestion(typed: String) -> Result(String, Nil) {
+  let known = ["install", "uninstall", "remove", "update", "help"]
+  search.closest(typed, known, 2)
+}
+
+// one_suggestion("instal") -> Ok("install")
+// one_suggestion("xyz")    -> Error(Nil)
+```
+
 ## Comparing strings: Levenshtein, Damerau-Levenshtein, OSA
 
 `levenshtein` counts the minimum number of insert / delete / substitute
@@ -63,6 +78,19 @@ pub fn distances() -> #(Int, Int, Int) {
 }
 
 // distances() -> #(3, 2, 3)
+```
+
+`distance.normalized_levenshtein` rescales Levenshtein distance to a
+similarity in `[0.0, 1.0]` (`1.0` means identical). Use it when ranking
+by edit distance is preferred over Jaro-Winkler.
+
+```gleam
+import textmetrics/distance
+
+pub fn levenshtein_similarity() -> Float {
+  // levenshtein = 3, max graphemes = 7 → 1 - 3/7 = 4/7.
+  distance.normalized_levenshtein("kitten", "sitting")
+}
 ```
 
 `hamming` requires equal-length inputs and returns

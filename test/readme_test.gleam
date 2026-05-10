@@ -28,6 +28,16 @@ pub fn readme_suggest_command_test() {
   suggest_command("xyz") |> should.equal([])
 }
 
+pub fn one_suggestion(typed: String) -> Result(String, Nil) {
+  let known = ["install", "uninstall", "remove", "update", "help"]
+  search.closest(typed, known, 2)
+}
+
+pub fn readme_one_suggestion_test() {
+  one_suggestion("instal") |> should.equal(Ok("install"))
+  one_suggestion("xyz") |> should.equal(Error(Nil))
+}
+
 // ---------------------------------------------------------------------
 // Comparing strings: Levenshtein, Damerau-Levenshtein, OSA
 // ---------------------------------------------------------------------
@@ -41,6 +51,19 @@ pub fn distances() -> #(Int, Int, Int) {
 
 pub fn readme_distances_test() {
   distances() |> should.equal(#(3, 2, 3))
+}
+
+pub fn levenshtein_similarity() -> Float {
+  // levenshtein = 3, max graphemes = 7 → 1 - 3/7 = 4/7.
+  distance.normalized_levenshtein("kitten", "sitting")
+}
+
+pub fn readme_levenshtein_similarity_test() {
+  let s = levenshtein_similarity()
+  case s >. 0.571 && s <. 0.572 {
+    True -> Nil
+    False -> should.fail()
+  }
 }
 
 // ---------------------------------------------------------------------

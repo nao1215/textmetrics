@@ -12,6 +12,14 @@ import gleam/order
 import textmetrics/distance
 import textmetrics/similarity
 
+/// A scored candidate produced by [`rank_jaro_winkler`](#rank_jaro_winkler).
+///
+/// Both fields are labelled so callers can read them directly as
+/// `r.label` and `r.score` without destructuring a tuple.
+pub type Ranked {
+  Ranked(label: String, score: Float)
+}
+
 /// Return candidates within `max_distance` Levenshtein graphemes of
 /// `query`, sorted ascending by distance. Empty list when nothing
 /// matches or when `candidates` is empty.
@@ -43,9 +51,28 @@ pub fn did_you_mean(
   })
 }
 
+/// Single closest candidate within `max_distance` Levenshtein
+/// graphemes of `query`. Returns `Error(Nil)` when no candidate is
+/// close enough or when `candidates` is empty.
+///
+/// This is the convenience form of [`did_you_mean`](#did_you_mean) for
+/// the dominant CLI use case ("Unknown command. Did you mean `X`?").
+/// Ties on distance are broken by the candidate's position in
+/// `candidates` — the first qualifying candidate wins.
+pub fn closest(
+  query: String,
+  candidates: List(String),
+  max_distance: Int,
+) -> Result(String, Nil) {
+  case did_you_mean(query, candidates, max_distance) {
+    [first, ..] -> Ok(first)
+    [] -> Error(Nil)
+  }
+}
+
 /// Rank `candidates` by Jaro-Winkler similarity (Winkler-1990
-/// defaults) descending, returning up to `top_n` of them paired with
-/// their score.
+/// defaults) descending, returning up to `top_n` [`Ranked`](#Ranked)
+/// records.
 ///
 /// Ties on similarity are broken by the candidate's position in
 /// `candidates`. When `top_n <= 0` returns an empty list.
@@ -53,7 +80,7 @@ pub fn rank_jaro_winkler(
   query: String,
   candidates: List(String),
   top_n: Int,
-) -> List(#(String, Float)) {
+) -> List(Ranked) {
   candidates
   |> list.index_map(fn(c, i) { #(c, similarity.jaro_winkler(query, c), i) })
   |> list.sort(by: fn(a, b) {
@@ -67,6 +94,6 @@ pub fn rank_jaro_winkler(
   |> list.take(top_n)
   |> list.map(fn(t) {
     let #(c, s, _) = t
-    #(c, s)
+    Ranked(label: c, score: s)
   })
 }

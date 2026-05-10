@@ -13,6 +13,10 @@ import gleam/result
 ///
 /// Time `O(m·n)`, space `O(m + n)`. Returns `0` when either input is
 /// empty.
+///
+/// Note: this name shadows `gleam/list.length` if both are imported
+/// unqualified (`import textmetrics/lcs.{length}`). Prefer the
+/// qualified `lcs.length(...)` form to avoid the conflict.
 pub fn length(a: List(t), b: List(t)) -> Int {
   let n = list.length(b)
   case a, b {
