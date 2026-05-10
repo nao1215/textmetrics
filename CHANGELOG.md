@@ -7,47 +7,53 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ## [Unreleased]
 
-### Added
-
-- `textmetrics/edit`: `Edit` and `Run` ADTs, plus `recover_old`,
-  `recover_new`, `cost`, and `runs` helpers.
-- `textmetrics/distance`: `levenshtein`, `damerau_levenshtein`, `osa`,
-  `hamming`, and a generic `levenshtein_list/2`.
-- `textmetrics/similarity`: `jaro`, `jaro_winkler`,
-  `jaro_winkler_with`, validated `JaroWinklerConfig`, and
-  `sorensen_dice` over grapheme n-grams.
-- `textmetrics/lcs`: `length` and `sequence` helpers for longest common
-  subsequence.
-- `textmetrics/diff`: Myers (1986) and patience diff plus POSIX
-  unified-diff rendering with a validated `UnifiedOptions` bag.
-- `textmetrics/search`: `did_you_mean`, `rank_jaro_winkler`, and
-  `closest` (single best match for "Did you mean ...?" CLI prompts).
-- `textmetrics/distance`: `normalized_levenshtein` — Levenshtein-based
-  similarity score in `[0.0, 1.0]` for ranking by edit distance
-  without rolling the formula by hand.
-- `textmetrics/diff`: `with_old_name` and `with_new_name` setters on
-  `UnifiedOptions`, mirroring `with_context_lines` for symmetric
-  builder-style overrides.
-- Spec §12 reference values, §13 axiom-style property tests, and
-  Unicode reference suite all passing on Erlang and JavaScript.
-
-### Changed
-
-- `textmetrics/search.rank_jaro_winkler` now returns `List(Ranked)`,
-  where `Ranked` is a labelled record (`label: String`, `score:
-  Float`). Callers can read `r.label` / `r.score` directly instead of
-  destructuring a tuple. The previous `List(#(String, Float))` shape
-  is gone — callsites need a small update. (Pre-release breaking
-  change; the package has not been published to Hex.)
-- `textmetrics/lcs.length` now documents that it shadows
-  `gleam/list.length` when both are imported unqualified, and
-  recommends the qualified call form.
-
 ## [0.1.0] - 2026-05-10
 
-### Added
+First public release.
 
-- Initial Gleam project scaffold
-- GitHub Actions for CI and release automation
-- `mise` and `just` based local development workflow
-- Contributor and security policy documents
+### Added — public API
+
+- `textmetrics/edit`: `Edit` and `Run` ADTs, plus `recover_old`,
+  `recover_new`, `cost`, and `runs` helpers. `EditScript(a)` is a
+  type alias for `List(Edit(a))` so it interops with `gleam/list`.
+- `textmetrics/distance`: `levenshtein`, `damerau_levenshtein` (true
+  variant), `osa`, `hamming` (returns `Result(Int, HammingError)`),
+  `levenshtein_list/2` (generic over equality-comparable lists), and
+  `normalized_levenshtein` (Levenshtein-based similarity in `[0.0,
+  1.0]`).
+- `textmetrics/similarity`: `jaro`, `jaro_winkler`,
+  `jaro_winkler_with`, validated `JaroWinklerConfig` (opaque, with
+  smart constructor and accessors), and `sorensen_dice` over grapheme
+  n-grams.
+- `textmetrics/lcs`: `length` and `sequence` for longest common
+  subsequence over generic lists.
+- `textmetrics/diff`: Myers (1986) `myers`, Bram Cohen's `patience`,
+  POSIX-format `to_unified`, and validated `UnifiedOptions` (opaque)
+  with `with_context_lines`, `with_old_name`, `with_new_name`
+  setters and `old_name` / `new_name` / `context_lines` accessors.
+- `textmetrics/search`: `did_you_mean`, `closest`, and
+  `rank_jaro_winkler` (returns `List(Ranked)` where
+  `Ranked(label: String, score: Float)`).
+
+### Verification
+
+- 346 tests pass on Erlang and JavaScript.
+- Reference values from spec §12 (Levenshtein / Jaro / Jaro-Winkler /
+  Sørensen-Dice / Hamming / Damerau-vs-OSA / LCS / Myers /
+  unified-diff format / Unicode grapheme cases) all match exactly.
+- 155 metamon-driven property and metamorphic tests covering the
+  axioms in spec §13 (non-negativity, identity, symmetry, triangle
+  inequality, OSA bracketing, JW floor / cap, LCS bounds, Myers
+  round-trip and optimality).
+- Targeted boundary probes on emoji ZWJ sequences, skin-tone
+  modifiers, regional indicator pairs, Hangul jamo, NFC vs NFD,
+  combining marks, RTL content, and `to_unified` hunk-merge boundary
+  arithmetic.
+
+### Project infrastructure
+
+- `mise`-pinned Gleam / Erlang toolchain.
+- `just check` / `just ci` recipes.
+- GitHub Actions for CI (Erlang + JavaScript) and release automation
+  (Hex publish + GitHub Release on `v*` tag).
+- Contributor and security policy documents.
