@@ -7,6 +7,19 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-05-10
+
+### Changed
+
+- Tightened the package description in `gleam.toml` to match the
+  GitHub repository description: "Edit distances, similarity scores,
+  LCS, and diff for Gleam."
+- Replaced the internal "Design Spec" link in `gleam.toml` with a
+  link to the `CHANGELOG.md`. The spec is a project-internal
+  document and should not be surfaced on the Hex page.
+
+No source-code changes; the public API is identical to v0.1.0.
+
 ## [0.1.0] - 2026-05-10
 
 First public release.
