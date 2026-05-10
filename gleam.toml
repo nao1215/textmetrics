@@ -1,11 +1,11 @@
 name = "textmetrics"
-version = "0.1.0"
-description = "String metrics, diffs, and similarity helpers for Gleam"
+version = "0.1.1"
+description = "Edit distances, similarity scores, LCS, and diff for Gleam."
 licences = ["MIT"]
 repository = { type = "github", user = "nao1215", repo = "textmetrics" }
 links = [
   { title = "Repository", href = "https://github.com/nao1215/textmetrics" },
-  { title = "Design Spec", href = "https://github.com/nao1215/textmetrics/blob/main/doc/reference/spec.md" },
+  { title = "Changelog", href = "https://github.com/nao1215/textmetrics/blob/main/CHANGELOG.md" },
 ]
 gleam = ">= 1.15.0"
 
