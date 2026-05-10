@@ -1,0 +1,39 @@
+name = "textmetrics"
+version = "0.1.0"
+description = "String metrics, diffs, and similarity helpers for Gleam"
+licences = ["MIT"]
+repository = { type = "github", user = "nao1215", repo = "textmetrics" }
+links = [
+  { title = "Repository", href = "https://github.com/nao1215/textmetrics" },
+  { title = "Design Spec", href = "https://github.com/nao1215/textmetrics/blob/main/doc/reference/spec.md" },
+]
+gleam = ">= 1.15.0"
+
+[dependencies]
+gleam_stdlib = ">= 0.44.0 and < 2.0.0"
+
+[dev-dependencies]
+gleeunit = ">= 1.0.0 and < 2.0.0"
+glinter = ">= 2.14.0 and < 3.0.0"
+
+[tools.glinter]
+warnings_as_errors = true
+include = ["src/", "test/"]
+
+[tools.glinter.rules]
+label_possible = "off"
+prefer_guard_clause = "off"
+unused_exports = "off"
+# Algorithm modules use conventional mathematical names (m, n, i, j, k, l)
+# and DP-table accesses with default fall-throughs that aren't real
+# error-propagation paths.
+short_variable_name = "off"
+deep_nesting = "off"
+thrown_away_error = "off"
+
+[tools.glinter.ignore]
+"test/**/*.gleam" = [
+  "assert_ok_pattern",
+  "missing_type_annotation",
+  "short_variable_name",
+]
