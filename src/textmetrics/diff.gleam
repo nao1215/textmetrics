@@ -17,9 +17,20 @@ import gleam/string
 import textmetrics/edit.{type EditScript, Delete, Equal, Insert}
 
 /// Returned by [`with_context_lines`](#with_context_lines) when given
-/// a negative argument.
+/// a negative argument, and by [`unified_options_checked`](#unified_options_checked) /
+/// [`with_old_name_checked`](#with_old_name_checked) /
+/// [`with_new_name_checked`](#with_new_name_checked) when the name
+/// contains a byte that would corrupt the unified-diff header
+/// (`\n`, `\r`, `\u{0000}`, `\t`).
 pub type UnifiedOptionsError {
   ContextLinesNegative(got: Int)
+  NameContainsForbiddenBytes(field: NameField, value: String)
+}
+
+/// Which name field rejected the input.
+pub type NameField {
+  OldName
+  NewName
 }
 
 /// Validated options for [`to_unified`](#to_unified).
@@ -33,12 +44,35 @@ pub opaque type UnifiedOptions {
 }
 
 /// Default constructor: `context_lines = 3`, matching POSIX
-/// `diff -u3`.
+/// `diff -u3`. Silently strips bytes that would corrupt the
+/// `--- <old_name>` / `+++ <new_name>` header (`\n`, `\r`,
+/// `\u{0000}`, `\t`) — see [`unified_options_checked`](#unified_options_checked)
+/// for the strict variant that surfaces those bytes as a typed error.
 pub fn unified_options(
   old_name old_name: String,
   new_name new_name: String,
 ) -> UnifiedOptions {
-  UnifiedOptions(old_name: old_name, new_name: new_name, context_lines: 3)
+  UnifiedOptions(
+    old_name: sanitize_name(old_name),
+    new_name: sanitize_name(new_name),
+    context_lines: 3,
+  )
+}
+
+/// Strict counterpart of [`unified_options`](#unified_options).
+/// Returns `Error(NameContainsForbiddenBytes(field, value))` when
+/// either `old_name` or `new_name` contains `\n`, `\r`, `\u{0000}`,
+/// or `\t`. The non-strict variant silently strips those bytes;
+/// callers passing user-supplied paths should reach for this builder
+/// so the bad input surfaces at the call site instead of producing a
+/// label that disagrees with what was passed in.
+pub fn unified_options_checked(
+  old_name old_name: String,
+  new_name new_name: String,
+) -> Result(UnifiedOptions, UnifiedOptionsError) {
+  use _ <- result.try(validate_name(OldName, old_name))
+  use _ <- result.try(validate_name(NewName, new_name))
+  Ok(UnifiedOptions(old_name: old_name, new_name: new_name, context_lines: 3))
 }
 
 /// Override the context-line count. Returns
@@ -58,22 +92,92 @@ pub fn with_context_lines(
   }
 }
 
-/// Override the old-file label.
+/// Override the old-file label. Silently strips `\n` / `\r` /
+/// `\u{0000}` / `\t` — see [`with_old_name_checked`](#with_old_name_checked)
+/// for the strict variant.
 pub fn with_old_name(options: UnifiedOptions, name: String) -> UnifiedOptions {
   UnifiedOptions(
-    old_name: name,
+    old_name: sanitize_name(name),
     new_name: options.new_name,
     context_lines: options.context_lines,
   )
 }
 
-/// Override the new-file label.
+/// Strict counterpart of [`with_old_name`](#with_old_name). Returns
+/// `Error(NameContainsForbiddenBytes(OldName, value))` when `name`
+/// contains `\n`, `\r`, `\u{0000}`, or `\t`.
+pub fn with_old_name_checked(
+  options: UnifiedOptions,
+  name: String,
+) -> Result(UnifiedOptions, UnifiedOptionsError) {
+  use _ <- result.try(validate_name(OldName, name))
+  Ok(UnifiedOptions(
+    old_name: name,
+    new_name: options.new_name,
+    context_lines: options.context_lines,
+  ))
+}
+
+/// Override the new-file label. Silently strips `\n` / `\r` /
+/// `\u{0000}` / `\t` — see [`with_new_name_checked`](#with_new_name_checked)
+/// for the strict variant.
 pub fn with_new_name(options: UnifiedOptions, name: String) -> UnifiedOptions {
   UnifiedOptions(
     old_name: options.old_name,
-    new_name: name,
+    new_name: sanitize_name(name),
     context_lines: options.context_lines,
   )
+}
+
+/// Strict counterpart of [`with_new_name`](#with_new_name). Returns
+/// `Error(NameContainsForbiddenBytes(NewName, value))` when `name`
+/// contains `\n`, `\r`, `\u{0000}`, or `\t`.
+pub fn with_new_name_checked(
+  options: UnifiedOptions,
+  name: String,
+) -> Result(UnifiedOptions, UnifiedOptionsError) {
+  use _ <- result.try(validate_name(NewName, name))
+  Ok(UnifiedOptions(
+    old_name: options.old_name,
+    new_name: name,
+    context_lines: options.context_lines,
+  ))
+}
+
+// The unified-diff header — `--- <old_name>\n+++ <new_name>\n` — is
+// line-oriented and tab-delimited from the optional trailing date,
+// so embedded `\n` / `\r` break the header into multiple physical
+// lines that downstream `patch(1)` / `git apply` reject. NUL bytes
+// truncate the line for any POSIX C string consumer. Tabs are
+// folded into the same set because `diff -u` uses them to separate
+// the filename from the date stamp.
+fn sanitize_name(name: String) -> String {
+  string.to_graphemes(name)
+  |> list.filter(fn(g) {
+    case g {
+      "\n" -> False
+      "\r" -> False
+      "\u{0000}" -> False
+      "\t" -> False
+      _ -> True
+    }
+  })
+  |> string.concat
+}
+
+fn validate_name(
+  field: NameField,
+  name: String,
+) -> Result(Nil, UnifiedOptionsError) {
+  case
+    string.contains(name, "\n")
+    || string.contains(name, "\r")
+    || string.contains(name, "\u{0000}")
+    || string.contains(name, "\t")
+  {
+    True -> Error(NameContainsForbiddenBytes(field, name))
+    False -> Ok(Nil)
+  }
 }
 
 /// Read the old-file label.

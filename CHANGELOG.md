@@ -7,6 +7,29 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ## [Unreleased]
 
+### Fixed
+
+- **`textmetrics/diff`**: `unified_options`, `with_old_name`, and
+  `with_new_name` now silently strip bytes that would corrupt the
+  unified-diff header (`\n`, `\r`, `\u{0000}`, `\t`), keeping
+  `to_unified` output parseable by `patch(1)` / `git apply` regardless
+  of caller-supplied filename labels. The previous version wrote the
+  bytes verbatim and produced output that *looked* like a unified
+  diff but split the header across multiple lines or truncated under
+  POSIX C string consumers. (#3)
+
+### Added
+
+- **`textmetrics/diff`**: `unified_options_checked`,
+  `with_old_name_checked`, and `with_new_name_checked` are the
+  typed-error counterparts of the existing builders. They return
+  `Error(NameContainsForbiddenBytes(field, value))` instead of
+  silently stripping, so callers passing user-supplied paths can
+  surface the bad input at the call site. New `NameField` ADT
+  (`OldName` / `NewName`) identifies which field rejected the input,
+  and the new `NameContainsForbiddenBytes` variant joins the existing
+  `ContextLinesNegative` under `UnifiedOptionsError`.
+
 ## [0.1.1] - 2026-05-10
 
 ### Changed

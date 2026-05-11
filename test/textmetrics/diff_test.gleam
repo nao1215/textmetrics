@@ -1,5 +1,7 @@
 import gleeunit/should
-import textmetrics/diff.{ContextLinesNegative}
+import textmetrics/diff.{
+  ContextLinesNegative, NameContainsForbiddenBytes, NewName, OldName,
+}
 import textmetrics/edit
 
 pub fn myers_round_trip_basic_test() {
@@ -158,4 +160,106 @@ pub fn with_old_and_new_name_compose_test() {
     |> diff.with_new_name("a-v2")
   diff.old_name(updated) |> should.equal("a-v1")
   diff.new_name(updated) |> should.equal("a-v2")
+}
+
+// Issue #3: names with embedded newlines / CR / NUL / tab corrupt the
+// unified-diff header. The non-strict constructors and setters now
+// silently strip those bytes; the `_checked` variants surface them
+// as `NameContainsForbiddenBytes` errors.
+
+pub fn unified_options_strips_newline_from_old_name_test() {
+  let opts = diff.unified_options(old_name: "old\nfake-line", new_name: "new")
+  diff.old_name(opts) |> should.equal("oldfake-line")
+}
+
+pub fn unified_options_strips_cr_from_new_name_test() {
+  let opts = diff.unified_options(old_name: "a", new_name: "new\rextra")
+  diff.new_name(opts) |> should.equal("newextra")
+}
+
+pub fn unified_options_strips_nul_from_new_name_test() {
+  let opts = diff.unified_options(old_name: "a", new_name: "new\u{0000}null")
+  diff.new_name(opts) |> should.equal("newnull")
+}
+
+pub fn unified_options_strips_tab_from_old_name_test() {
+  let opts = diff.unified_options(old_name: "old\tdate", new_name: "new")
+  diff.old_name(opts) |> should.equal("olddate")
+}
+
+pub fn with_old_name_strips_forbidden_bytes_test() {
+  let base = diff.unified_options(old_name: "a", new_name: "b")
+  let updated = diff.with_old_name(base, "renamed\n\rextra\u{0000}\tend")
+  diff.old_name(updated) |> should.equal("renamedextraend")
+}
+
+pub fn with_new_name_strips_forbidden_bytes_test() {
+  let base = diff.unified_options(old_name: "a", new_name: "b")
+  let updated = diff.with_new_name(base, "renamed\n\rextra\u{0000}\tend")
+  diff.new_name(updated) |> should.equal("renamedextraend")
+}
+
+pub fn unified_options_checked_accepts_clean_names_test() {
+  let assert Ok(opts) =
+    diff.unified_options_checked(old_name: "old", new_name: "new")
+  diff.old_name(opts) |> should.equal("old")
+  diff.new_name(opts) |> should.equal("new")
+  diff.context_lines(opts) |> should.equal(3)
+}
+
+pub fn unified_options_checked_rejects_newline_in_old_name_test() {
+  diff.unified_options_checked(old_name: "old\nfake", new_name: "new")
+  |> should.equal(Error(NameContainsForbiddenBytes(OldName, "old\nfake")))
+}
+
+pub fn unified_options_checked_rejects_nul_in_new_name_test() {
+  diff.unified_options_checked(old_name: "old", new_name: "new\u{0000}null")
+  |> should.equal(Error(NameContainsForbiddenBytes(NewName, "new\u{0000}null")))
+}
+
+pub fn unified_options_checked_reports_old_name_first_when_both_bad_test() {
+  // Mirrors how `result.try` short-circuits: the first failing field
+  // is the one reported, and `old_name` is checked first.
+  diff.unified_options_checked(old_name: "bad\nold", new_name: "bad\nnew")
+  |> should.equal(Error(NameContainsForbiddenBytes(OldName, "bad\nold")))
+}
+
+pub fn with_old_name_checked_rejects_tab_test() {
+  let opts = diff.unified_options(old_name: "a", new_name: "b")
+  diff.with_old_name_checked(opts, "old\tdate")
+  |> should.equal(Error(NameContainsForbiddenBytes(OldName, "old\tdate")))
+}
+
+pub fn with_old_name_checked_preserves_other_fields_test() {
+  let opts = diff.unified_options(old_name: "a", new_name: "b")
+  let assert Ok(with_ctx) = diff.with_context_lines(opts, 5)
+  let assert Ok(updated) = diff.with_old_name_checked(with_ctx, "renamed-a")
+  diff.old_name(updated) |> should.equal("renamed-a")
+  diff.new_name(updated) |> should.equal("b")
+  diff.context_lines(updated) |> should.equal(5)
+}
+
+pub fn with_new_name_checked_rejects_cr_test() {
+  let opts = diff.unified_options(old_name: "a", new_name: "b")
+  diff.with_new_name_checked(opts, "new\rextra")
+  |> should.equal(Error(NameContainsForbiddenBytes(NewName, "new\rextra")))
+}
+
+pub fn with_new_name_checked_preserves_other_fields_test() {
+  let opts = diff.unified_options(old_name: "a", new_name: "b")
+  let assert Ok(with_ctx) = diff.with_context_lines(opts, 7)
+  let assert Ok(updated) = diff.with_new_name_checked(with_ctx, "renamed-b")
+  diff.old_name(updated) |> should.equal("a")
+  diff.new_name(updated) |> should.equal("renamed-b")
+  diff.context_lines(updated) |> should.equal(7)
+}
+
+pub fn to_unified_header_stays_two_lines_after_sanitization_test() {
+  let script = diff.myers(["a"], ["b"])
+  let opts = diff.unified_options(old_name: "old\nfake", new_name: "new")
+  let out = diff.to_unified(script, opts)
+  // The first two lines must be `--- ` and `+++ ` — i.e. no orphan
+  // line between them. After sanitization the header reads
+  // `--- oldfake\n+++ new\n@@ -1 +1 @@\n-a\n+b\n`.
+  out |> should.equal("--- oldfake\n+++ new\n@@ -1 +1 @@\n-a\n+b\n")
 }
