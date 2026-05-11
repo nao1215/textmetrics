@@ -7,6 +7,8 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-11
+
 ### Fixed
 
 - **`textmetrics/diff`**: `unified_options`, `with_old_name`, and
