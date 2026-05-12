@@ -108,7 +108,42 @@ pub fn jaro_winkler_with(
   j +. l *. config.prefix_scale *. { 1.0 -. j }
 }
 
+/// Sørensen-Dice over bigrams (`n = 2`) — the de-facto standard for
+/// string similarity. Sibling of [`jaro`](#jaro) /
+/// [`jaro_winkler`](#jaro_winkler), returning a plain `Float` in
+/// `[0.0, 1.0]` so call sites can pipe directly into thresholds
+/// without unwrapping a `Result`.
+///
+/// Equivalent to `sorensen_dice(a, b, 2)` with the impossible-by-
+/// construction `n < 1` branch elided.
+pub fn sorensen_dice_bigrams(a: String, b: String) -> Float {
+  // n = 2 is positive, so sorensen_dice's error arm is unreachable.
+  case sorensen_dice(a, b, 2) {
+    Ok(score) -> score
+    Error(_) -> 0.0
+  }
+}
+
+/// Sørensen-Dice over trigrams (`n = 3`). The same shape as
+/// [`sorensen_dice_bigrams`](#sorensen_dice_bigrams) but with a wider
+/// n-gram window; useful when inputs share long common substrings
+/// and bigrams produce a noisy score.
+pub fn sorensen_dice_trigrams(a: String, b: String) -> Float {
+  case sorensen_dice(a, b, 3) {
+    Ok(score) -> score
+    Error(_) -> 0.0
+  }
+}
+
 /// Sørensen-Dice coefficient over grapheme n-grams of size `n`.
+///
+/// Strict variant — surfaces `NgramSizeInvalid` for `n < 1`. For the
+/// common case of bigrams or trigrams over user-controlled `a` and
+/// `b`, prefer the lenient siblings
+/// [`sorensen_dice_bigrams`](#sorensen_dice_bigrams) and
+/// [`sorensen_dice_trigrams`](#sorensen_dice_trigrams), which return
+/// a plain `Float` and skip the error-discarding boilerplate at the
+/// call site.
 ///
 /// Edge cases (per spec §7.5):
 /// - When both n-gram multisets are empty, the result is `Ok(1.0)` if

@@ -126,3 +126,50 @@ pub fn sorensen_dice_rejects_negative_n_test() {
   similarity.sorensen_dice("abc", "xyz", -1)
   |> should.equal(Error(NgramSizeInvalid(-1)))
 }
+
+// --- sorensen_dice_bigrams / sorensen_dice_trigrams (lenient #6) ---
+
+pub fn sorensen_dice_bigrams_identical_test() {
+  similarity.sorensen_dice_bigrams("abc", "abc") |> should.equal(1.0)
+}
+
+pub fn sorensen_dice_bigrams_empty_pair_test() {
+  similarity.sorensen_dice_bigrams("", "") |> should.equal(1.0)
+}
+
+pub fn sorensen_dice_bigrams_disjoint_test() {
+  similarity.sorensen_dice_bigrams("abc", "xyz") |> should.equal(0.0)
+}
+
+pub fn sorensen_dice_bigrams_night_nacht_test() {
+  // Same fixture as sorensen_dice_night_nacht_test — the lenient
+  // alias must match the strict variant exactly when n = 2.
+  approx_equal(similarity.sorensen_dice_bigrams("night", "nacht"), 0.25)
+  |> should.be_true
+}
+
+pub fn sorensen_dice_bigrams_matches_strict_test() {
+  let assert Ok(strict) = similarity.sorensen_dice("context", "contact", 2)
+  similarity.sorensen_dice_bigrams("context", "contact")
+  |> should.equal(strict)
+}
+
+pub fn sorensen_dice_trigrams_identical_test() {
+  similarity.sorensen_dice_trigrams("abcd", "abcd") |> should.equal(1.0)
+}
+
+pub fn sorensen_dice_trigrams_matches_strict_test() {
+  let assert Ok(strict) = similarity.sorensen_dice("context", "contact", 3)
+  similarity.sorensen_dice_trigrams("context", "contact")
+  |> should.equal(strict)
+}
+
+pub fn sorensen_dice_bigrams_pipes_into_threshold_test() {
+  // The lenient signature exists so callers can pipe directly into
+  // thresholds. Pin the call-site shape with a trivial threshold
+  // helper to make sure the type plumbing stays Float-shaped.
+  let threshold = fn(score: Float, t: Float) { score >=. t }
+  similarity.sorensen_dice_bigrams("hello", "hello")
+  |> threshold(0.5)
+  |> should.be_true
+}

@@ -7,6 +7,19 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ## [Unreleased]
 
+### Added
+
+- `similarity.sorensen_dice_bigrams(a, b)` and
+  `similarity.sorensen_dice_trigrams(a, b)`: pipe-friendly lenient
+  aliases of `similarity.sorensen_dice` that return a plain `Float`
+  in `[0.0, 1.0]` instead of `Result(Float, SorensenDiceError)`.
+  The strict variant stays available for callers that take `n` from
+  user input; the new aliases close the awkward asymmetry with
+  `jaro` and `jaro_winkler` (which already return plain `Float`) and
+  remove the `case … { Ok(s) -> s; Error(_) -> 0.0 }` boilerplate
+  at the dominant call shape — "give me a similarity score between
+  two strings". (#6)
+
 ## [0.2.0] - 2026-05-11
 
 ### Fixed
