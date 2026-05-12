@@ -7,6 +7,8 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-12
+
 ### Added
 
 - `similarity.sorensen_dice_bigrams(a, b)` and
