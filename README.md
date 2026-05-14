@@ -6,8 +6,11 @@
 [![CI](https://github.com/nao1215/textmetrics/actions/workflows/ci.yml/badge.svg)](https://github.com/nao1215/textmetrics/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/nao1215/textmetrics)](LICENSE)
 
-String comparison metrics for Gleam: edit distances, similarity scores,
-longest common subsequence, and line-level diff.
+String comparison and readability metrics for Gleam: edit distances,
+similarity scores, longest common subsequence, line-level diff, and
+canonical readability scores (Flesch-Kincaid, Gunning Fog, SMOG, ARI,
+Coleman-Liau) with the word / sentence / syllable count primitives
+they consume.
 
 ## Features
 
@@ -16,6 +19,10 @@ longest common subsequence, and line-level diff.
 - Longest common subsequence (length and a recovered sequence)
 - Diff: Myers (1986) and patience, plus POSIX unified-diff rendering
 - `did_you_mean` and Jaro-Winkler ranking for spell-correction style search
+- Readability: Flesch Reading Ease, Flesch-Kincaid Grade, Gunning Fog,
+  SMOG, Automated Readability Index, Coleman-Liau
+- Count primitives: words, sentences, syllables, characters, paragraphs,
+  polysyllables
 - Pure Gleam, runs on Erlang and JavaScript targets
 - Operates on Unicode grapheme clusters (UAX #29)
 
@@ -218,6 +225,32 @@ pub fn lcs_example() -> #(Int, List(String)) {
 common subsequence. Consumers should rely on
 `length(sequence(a, b)) == length(a, b)` rather than on the specific
 subsequence chosen.
+
+## Readability scores
+
+Six canonical English-language readability formulas, plus the count
+primitives they consume. All scores are `Result(Float, _)` so that
+extremely small inputs (the SMOG 30-sentence floor, for example) get
+a typed error instead of a non-finite number.
+
+```gleam
+import textmetrics/readability
+
+pub fn grade_for(text: String) -> Result(Float, readability.ReadabilityError) {
+  readability.flesch_kincaid_grade(text)
+}
+
+// grade_for("The quick brown fox jumps over the lazy dog.")
+// -> Ok(~2.3)   (mid-2nd-grade reading level)
+```
+
+`textmetrics/count` exposes the primitives in case you want to roll
+your own metric — `count.words`, `count.sentences`,
+`count.syllables_in_word`, `count.syllables`, `count.characters`,
+`count.paragraphs`, `count.polysyllables`. The syllable counter is an
+English-tuned heuristic (silent-`e` rule with the consonant-`le`
+exception). Non-English text falls back to one syllable per word; do
+not interpret the resulting grade as meaningful outside English prose.
 
 ## Unicode policy
 
