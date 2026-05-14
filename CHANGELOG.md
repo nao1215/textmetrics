@@ -7,6 +7,8 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-14
+
 ### Added
 
 - New `textmetrics/readability` module implementing the six canonical
