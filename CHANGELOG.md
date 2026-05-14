@@ -7,6 +7,27 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ## [Unreleased]
 
+### Added
+
+- New `textmetrics/readability` module implementing the six canonical
+  English-language readability scores: `flesch_reading_ease`,
+  `flesch_kincaid_grade`, `gunning_fog`, `smog`,
+  `automated_readability_index`, `coleman_liau_index`. All return
+  `Result(Float, ReadabilityError)` so that empty inputs and the
+  SMOG 30-sentence statistical-validity floor surface as a typed
+  `TooFewWords` / `TooFewSentences` error instead of `NaN` /
+  infinity. Scores match Python `textstat` to within roughly ±2 on
+  the Reading Ease 0–100 scale and ±1 on grade-level scales. (#7)
+- New `textmetrics/count` module exposing the primitives consumed by
+  the readability scores: `words`, `sentences`, `syllables_in_word`,
+  `syllables`, `characters`, `paragraphs`, `polysyllables`. All
+  functions are pure, deterministic, `O(n)` in input length, and
+  iterate over Unicode grapheme clusters. `syllables_in_word`
+  implements the English silent-`e` heuristic with the consonant-`le`
+  exception (e.g. "syllable" → 3, "table" → 2) and falls back to
+  `1` for words with no ASCII letters so non-English tokens don't
+  poison the surrounding score. (#7)
+
 ## [0.3.0] - 2026-05-12
 
 ### Added
