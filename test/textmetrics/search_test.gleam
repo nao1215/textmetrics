@@ -1,4 +1,5 @@
 import gleam/float
+import gleam/option.{None, Some}
 import gleeunit/should
 import textmetrics/search
 
@@ -80,23 +81,23 @@ pub fn rank_jaro_winkler_uses_labeled_fields_test() {
 
 pub fn closest_returns_single_best_match_test() {
   search.closest("instal", ["install", "uninstall", "tail"], 2)
-  |> should.equal(Ok("install"))
+  |> should.equal(Some("install"))
 }
 
-pub fn closest_returns_error_when_no_match_within_distance_test() {
-  search.closest("xyz", ["install"], 2) |> should.equal(Error(Nil))
+pub fn closest_returns_none_when_no_match_within_distance_test() {
+  search.closest("xyz", ["install"], 2) |> should.equal(None)
 }
 
-pub fn closest_empty_candidates_returns_error_test() {
-  search.closest("a", [], 5) |> should.equal(Error(Nil))
+pub fn closest_empty_candidates_returns_none_test() {
+  search.closest("a", [], 5) |> should.equal(None)
 }
 
 pub fn closest_breaks_ties_by_input_order_test() {
   // Three single-character candidates all distance 1 from "a"; the
   // first one in candidate order wins.
-  search.closest("a", ["x", "y", "z"], 1) |> should.equal(Ok("x"))
+  search.closest("a", ["x", "y", "z"], 1) |> should.equal(Some("x"))
 }
 
 pub fn closest_prefers_exact_match_over_close_test() {
-  search.closest("foo", ["fool", "foo", "fox"], 5) |> should.equal(Ok("foo"))
+  search.closest("foo", ["fool", "foo", "fox"], 5) |> should.equal(Some("foo"))
 }

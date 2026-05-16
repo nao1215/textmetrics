@@ -8,6 +8,7 @@
 
 import gleam/float
 import gleam/list
+import gleam/option.{None}
 import gleam/string
 import gleeunit/should
 import textmetrics/diff
@@ -335,8 +336,8 @@ pub fn did_you_mean_empty_candidates_returns_empty_test() {
   search.did_you_mean("query", [], 5) |> should.equal([])
 }
 
-pub fn closest_negative_max_distance_returns_error_test() {
-  search.closest("query", ["a", "b"], -1) |> should.equal(Error(Nil))
+pub fn closest_negative_max_distance_returns_none_test() {
+  search.closest("query", ["a", "b"], -1) |> should.equal(None)
 }
 
 pub fn rank_jaro_winkler_zero_top_n_returns_empty_test() {

@@ -8,6 +8,7 @@
 //// indicators, skin-tone modifiers) are seeded via `with_examples`.
 
 import gleam/list
+import gleam/option.{Some}
 import gleam/string
 import metamon
 import metamon/generator
@@ -290,7 +291,7 @@ pub fn diff_self_recover_old_test() {
 
 pub fn search_closest_self_test() {
   metamon.forall(small_unicode_string(), fn(a) {
-    search.closest(a, [a], 0) == Ok(a)
+    search.closest(a, [a], 0) == Some(a)
   })
 }
 

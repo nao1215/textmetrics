@@ -4,6 +4,7 @@
 //// implementation.
 
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleeunit/should
 import textmetrics/diff
@@ -28,14 +29,14 @@ pub fn readme_suggest_command_test() {
   suggest_command("xyz") |> should.equal([])
 }
 
-pub fn one_suggestion(typed: String) -> Result(String, Nil) {
+pub fn one_suggestion(typed: String) -> Option(String) {
   let known = ["install", "uninstall", "remove", "update", "help"]
   search.closest(typed, known, 2)
 }
 
 pub fn readme_one_suggestion_test() {
-  one_suggestion("instal") |> should.equal(Ok("install"))
-  one_suggestion("xyz") |> should.equal(Error(Nil))
+  one_suggestion("instal") |> should.equal(Some("install"))
+  one_suggestion("xyz") |> should.equal(None)
 }
 
 // ---------------------------------------------------------------------

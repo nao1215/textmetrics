@@ -8,6 +8,7 @@
 import gleam/float
 import gleam/int
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/order
 import gleam/string
 import metamon
@@ -430,13 +431,13 @@ pub fn closest_equals_did_you_mean_head_property_test() {
     case search.did_you_mean(query, candidates, max_d) {
       [] ->
         case search.closest(query, candidates, max_d) {
-          Error(Nil) -> True
-          Ok(_) -> False
+          None -> True
+          Some(_) -> False
         }
       [head, ..] ->
         case search.closest(query, candidates, max_d) {
-          Ok(found) -> found == head
-          Error(Nil) -> False
+          Some(found) -> found == head
+          None -> False
         }
     }
   })

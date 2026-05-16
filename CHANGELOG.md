@@ -7,6 +7,10 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING**: `textmetrics/search.closest/3` now returns `Option(String)` instead of `Result(String, Nil)`. "No candidate within `max_distance`" is an expected, semantically empty result rather than a failure — `Option` is the idiomatic Gleam shape for that and lines up with `search.did_you_mean` (which already returns a possibly-empty `List(String)`). Callers update `Ok(name)` → `Some(name)` and `Error(Nil)` → `None`; no behaviour change beyond the constructor names. The README, all tests, and the property / metamorphic suites are migrated. (#12)
+
 ## [0.4.0] - 2026-05-14
 
 ### Added
