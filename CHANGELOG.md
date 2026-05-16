@@ -7,6 +7,8 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-16
+
 ### Documentation
 
 - `textmetrics/search.did_you_mean` and `search.closest`: doc-comments now state explicitly that `max_distance` is measured against the whole candidate string. For prose-style candidates (multi-word titles, sentences), the length difference between a short query and a long candidate dominates the Levenshtein distance — a 4-budget call on `["Volcano in Iceland"]` looking for `"vulcano"` returns nothing because the distance is ~12. The doc-comment includes a one-line tokenise-first recipe (`list.flat_map(candidates, string.split(_, on: " "))`) for callers building "did you mean" UI over real titles. (#13)
