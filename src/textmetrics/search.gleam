@@ -27,6 +27,23 @@ pub type Ranked {
 ///
 /// Ties on distance are broken by the candidate's position in
 /// `candidates`.
+///
+/// `max_distance` is measured against the whole candidate string,
+/// not against substrings or tokens. The function is the right tool
+/// for short single-token candidate sets (command names, enum
+/// values, short labels) where the typo budget is similar in
+/// magnitude to the candidate's length. For prose-style candidates
+/// (multi-word titles, sentences), the length difference between a
+/// short query and a long candidate dominates the Levenshtein
+/// distance — `did_you_mean("vulcano", ["Volcano in Iceland"], 4)`
+/// returns `[]`, not `["Volcano in Iceland"]`, because the distance
+/// is ~12. Tokenise the candidate set first when the use case is
+/// prose-style:
+///
+/// ```gleam
+/// list.flat_map(titles, string.split(_, on: " "))
+/// |> search.did_you_mean(query, _, 2)
+/// ```
 pub fn did_you_mean(
   query: String,
   candidates: List(String),
@@ -66,6 +83,13 @@ pub fn did_you_mean(
 /// empty result rather than a failure. The matching companion
 /// [`did_you_mean`](#did_you_mean) already returns a (possibly empty)
 /// list for the same reason.
+///
+/// Inherits the whole-string measurement from
+/// [`did_you_mean`](#did_you_mean): the `max_distance` budget is
+/// compared against the entire candidate, not against substrings or
+/// tokens. Tokenise the candidate set first when working with
+/// prose-style candidates — see the `did_you_mean` doc-comment for
+/// the recipe.
 pub fn closest(
   query: String,
   candidates: List(String),
