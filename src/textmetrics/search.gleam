@@ -8,6 +8,7 @@
 import gleam/float
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/order
 import textmetrics/distance
 import textmetrics/similarity
@@ -52,21 +53,27 @@ pub fn did_you_mean(
 }
 
 /// Single closest candidate within `max_distance` Levenshtein
-/// graphemes of `query`. Returns `Error(Nil)` when no candidate is
-/// close enough or when `candidates` is empty.
+/// graphemes of `query`. Returns `None` when no candidate is close
+/// enough or when `candidates` is empty.
 ///
 /// This is the convenience form of [`did_you_mean`](#did_you_mean) for
 /// the dominant CLI use case ("Unknown command. Did you mean `X`?").
 /// Ties on distance are broken by the candidate's position in
 /// `candidates` — the first qualifying candidate wins.
+///
+/// Returns `Option(String)` rather than `Result(String, Nil)` because
+/// "no candidate within the threshold" is an expected, semantically
+/// empty result rather than a failure. The matching companion
+/// [`did_you_mean`](#did_you_mean) already returns a (possibly empty)
+/// list for the same reason.
 pub fn closest(
   query: String,
   candidates: List(String),
   max_distance: Int,
-) -> Result(String, Nil) {
+) -> Option(String) {
   case did_you_mean(query, candidates, max_distance) {
-    [first, ..] -> Ok(first)
-    [] -> Error(Nil)
+    [first, ..] -> Some(first)
+    [] -> None
   }
 }
 

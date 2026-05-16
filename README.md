@@ -55,15 +55,16 @@ pub fn suggest_command(typed: String) -> List(String) {
 needed (the typical "Did you mean `X`?" path).
 
 ```gleam
+import gleam/option.{type Option}
 import textmetrics/search
 
-pub fn one_suggestion(typed: String) -> Result(String, Nil) {
+pub fn one_suggestion(typed: String) -> Option(String) {
   let known = ["install", "uninstall", "remove", "update", "help"]
   search.closest(typed, known, 2)
 }
 
-// one_suggestion("instal") -> Ok("install")
-// one_suggestion("xyz")    -> Error(Nil)
+// one_suggestion("instal") -> Some("install")
+// one_suggestion("xyz")    -> None
 ```
 
 ## Comparing strings: Levenshtein, Damerau-Levenshtein, OSA
