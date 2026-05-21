@@ -191,6 +191,12 @@ pub fn render_diff() -> String {
 //  the lazy dog
 ```
 
+`diff.unified_options` silently strips bytes that would corrupt the
+`--- <old_name>` / `+++ <new_name>` header (CR, LF, NUL, TAB). For
+caller-supplied paths where you want the bad bytes to surface as a typed
+error instead of being dropped, use `diff.unified_options_checked` — same
+constructor shape, returns a `Result(UnifiedOptions, UnifiedOptionsError)`.
+
 `recover_old` and `recover_new` rebuild the inputs from a script. The
 round-trip property is the principal invariant of the `Edit` ADT.
 
