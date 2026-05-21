@@ -3,18 +3,21 @@
 //// All string-typed functions operate on **extended grapheme
 //// clusters** as defined by Unicode UAX #29; user-visible characters
 //// (CJK ideographs, emoji ZWJ sequences, Hangul jamo) count as one
-//// unit. Inputs are not normalized — callers wanting NFC equivalence
-//// must normalize strings before invoking these functions.
+//// unit. Inputs are pre-normalised to Unicode Normalization Form C
+//// (NFC), so canonically-equivalent strings such as `"\u{00C1}"`
+//// (precomposed) and `"A\u{0301}"` (decomposed) compare as equal.
 ////
 //// `levenshtein_list/2` exposes the same algorithm over arbitrary
 //// equality-comparable lists for callers diffing tokens, AST nodes,
-//// or any non-string sequence.
+//// or any non-string sequence. The list variant does not normalise
+//// its inputs — equality is defined by the element type's own `==`.
 
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/result
 import gleam/string
+import textmetrics/internal/unicode
 
 /// Returned by [`hamming`](#hamming) when its two inputs have a
 /// different number of graphemes.
@@ -25,6 +28,9 @@ pub type HammingError {
 /// Minimum number of single-grapheme insert / delete / substitute
 /// operations needed to transform `a` into `b`.
 ///
+/// Both inputs are pre-normalised to NFC, so canonically-equivalent
+/// strings (`"\u{00C1}"` vs `"A\u{0301}"`) compare as equal.
+///
 /// Edge cases:
 /// - `levenshtein("", "")` = `0`
 /// - `levenshtein("", b)` = grapheme count of `b`
@@ -33,7 +39,10 @@ pub type HammingError {
 ///
 /// Time `O(m·n)`, space `O(min(m, n))`.
 pub fn levenshtein(a: String, b: String) -> Int {
-  levenshtein_list(string.to_graphemes(a), string.to_graphemes(b))
+  levenshtein_list(
+    string.to_graphemes(unicode.to_nfc(a)),
+    string.to_graphemes(unicode.to_nfc(b)),
+  )
 }
 
 /// Levenshtein-based similarity in `[0.0, 1.0]`.
@@ -41,6 +50,9 @@ pub fn levenshtein(a: String, b: String) -> Int {
 /// Defined as `1.0 - levenshtein(a, b) / max(|a|, |b|)` where lengths
 /// are grapheme counts. `1.0` means identical, `0.0` means every
 /// grapheme position differs at the longer length.
+///
+/// Both inputs are pre-normalised to NFC, so canonically-equivalent
+/// strings score `1.0`.
 ///
 /// Edge cases:
 /// - `normalized_levenshtein("", "")` = `1.0` (convention).
@@ -51,8 +63,8 @@ pub fn levenshtein(a: String, b: String) -> Int {
 /// preferred over Jaro / Jaro-Winkler. Time `O(m·n)`, space
 /// `O(min(m, n))` — same as [`levenshtein`](#levenshtein).
 pub fn normalized_levenshtein(a: String, b: String) -> Float {
-  let ga = string.to_graphemes(a)
-  let gb = string.to_graphemes(b)
+  let ga = string.to_graphemes(unicode.to_nfc(a))
+  let gb = string.to_graphemes(unicode.to_nfc(b))
   let la = list.length(ga)
   let lb = list.length(gb)
   let max_len = case la >= lb {
@@ -138,10 +150,16 @@ fn levenshtein_inner(
 /// operation. Unlike OSA, the same substring may participate in
 /// multiple edits (e.g. `"ca"` → `"abc"` is `2`).
 ///
+/// Both inputs are pre-normalised to NFC, so canonically-equivalent
+/// strings have distance `0`.
+///
 /// Time `O(m·n)`, space `O(m·n)` (full matrix is required for the
 /// transposition recurrence).
 pub fn damerau_levenshtein(a: String, b: String) -> Int {
-  damerau_levenshtein_graphemes(string.to_graphemes(a), string.to_graphemes(b))
+  damerau_levenshtein_graphemes(
+    string.to_graphemes(unicode.to_nfc(a)),
+    string.to_graphemes(unicode.to_nfc(b)),
+  )
 }
 
 fn damerau_levenshtein_graphemes(ga: List(String), gb: List(String)) -> Int {
@@ -263,13 +281,19 @@ fn dl_inner(
 /// which is what most "Damerau distance" implementations actually
 /// compute.
 ///
+/// Both inputs are pre-normalised to NFC, so canonically-equivalent
+/// strings have distance `0`.
+///
 /// OSA does **not** satisfy the triangle inequality. Use
 /// [`damerau_levenshtein`](#damerau_levenshtein) when a true metric is
 /// required.
 ///
 /// Time `O(m·n)`, space `O(min(m, n))` (three rows).
 pub fn osa(a: String, b: String) -> Int {
-  osa_graphemes(string.to_graphemes(a), string.to_graphemes(b))
+  osa_graphemes(
+    string.to_graphemes(unicode.to_nfc(a)),
+    string.to_graphemes(unicode.to_nfc(b)),
+  )
 }
 
 fn osa_graphemes(ga: List(String), gb: List(String)) -> Int {
@@ -357,14 +381,18 @@ fn osa_inner(
 /// inputs differ. Returns `Error(LengthMismatch(...))` when the inputs
 /// have different grapheme counts.
 ///
+/// Both inputs are pre-normalised to NFC, so canonically-equivalent
+/// strings have distance `0` (and equal grapheme counts after
+/// normalisation, so no spurious `LengthMismatch`).
+///
 /// Edge cases:
 /// - `hamming("", "")` = `Ok(0)`
 /// - `hamming("a", "")` = `Error(LengthMismatch(1, 0))`
 ///
 /// Time `O(n)`, space `O(1)`.
 pub fn hamming(a: String, b: String) -> Result(Int, HammingError) {
-  let ga = string.to_graphemes(a)
-  let gb = string.to_graphemes(b)
+  let ga = string.to_graphemes(unicode.to_nfc(a))
+  let gb = string.to_graphemes(unicode.to_nfc(b))
   let la = list.length(ga)
   let lb = list.length(gb)
   case la == lb {

@@ -7,6 +7,10 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ## [Unreleased]
 
+### Fixed
+
+- `textmetrics/distance.levenshtein`, `distance.normalized_levenshtein`, `distance.damerau_levenshtein`, `distance.osa`, and `distance.hamming` now pre-normalise both inputs to Unicode Normalization Form C (NFC) before comparing. Canonically-equivalent strings such as `"\u{00C1}"` (precomposed, `U+00C1`) and `"A\u{0301}"` (decomposed, `U+0041 U+0301`) previously reported a non-zero distance even though they render identically as `Á`; they now compare as equal, which matches the README's "operates on Unicode grapheme clusters (UAX #29)" contract. NFC is delegated to the platform's built-in normaliser (`unicode:characters_to_nfc_binary/1` on Erlang, `String.prototype.normalize("NFC")` on JavaScript), so no new dependency is added. `levenshtein_list/2` is unchanged — the generic list variant defines equality through the element type's own `==`. (#18)
+
 ### Documentation
 
 - README: the "Diff: unified output" subsection now spells out that `diff.unified_options` silently strips CR / LF / NUL / TAB bytes from `old_name` / `new_name` (so they cannot corrupt the unified-diff header) and points callers at `diff.unified_options_checked` when the bad bytes should surface as a typed `Result` instead. The function-level docstring already had this distinction since #3; the README addition closes the discoverability gap for callers who only skim the top-level usage examples. (#17)
