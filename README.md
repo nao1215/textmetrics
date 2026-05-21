@@ -262,9 +262,13 @@ not interpret the resulting grade as meaningful outside English prose.
 ## Unicode policy
 
 All string-typed functions operate on extended grapheme clusters via
-`gleam/string.to_graphemes`. The library does not normalize input — NFC
-and NFD strings that render identically are reported as different.
-Callers wanting NFC equivalence should normalize before invoking.
+`gleam/string.to_graphemes`. Inputs are pre-normalised to Unicode
+Normalization Form C (NFC) before comparison, so canonically-equivalent
+strings such as `"\u{00C1}"` (precomposed, `U+00C1`) and `"A\u{0301}"`
+(decomposed, `U+0041 U+0301`) are treated as equal. The NFC step uses
+the platform's built-in normaliser (`unicode:characters_to_nfc_binary/1`
+on Erlang, `String.prototype.normalize("NFC")` on JavaScript), so no
+extra dependency is required.
 
 ## Development
 
