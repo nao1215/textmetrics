@@ -7,6 +7,10 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ## [Unreleased]
 
+### Documentation
+
+- README: the "Diff: unified output" subsection now spells out that `diff.unified_options` silently strips CR / LF / NUL / TAB bytes from `old_name` / `new_name` (so they cannot corrupt the unified-diff header) and points callers at `diff.unified_options_checked` when the bad bytes should surface as a typed `Result` instead. The function-level docstring already had this distinction since #3; the README addition closes the discoverability gap for callers who only skim the top-level usage examples. (#17)
+
 ## [0.5.0] - 2026-05-16
 
 ### Documentation
