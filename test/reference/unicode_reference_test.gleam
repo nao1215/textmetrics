@@ -1,6 +1,6 @@
-//// Spec §12.10: grapheme-level invariants. The library does not
-//// normalize input — NFC/NFD strings that *render* identically are
-//// reported as differing.
+//// Spec §12.10: grapheme-level invariants. Post-#18 the library
+//// pre-normalises inputs to Unicode Normalization Form C (NFC), so
+//// canonically-equivalent NFC/NFD strings compare as equal.
 
 import gleam/string
 import gleeunit/should
@@ -10,11 +10,11 @@ pub fn levenshtein_identical_nfc_test() {
   distance.levenshtein("café", "café") |> should.equal(0)
 }
 
-pub fn levenshtein_nfc_vs_nfd_is_one_test() {
+pub fn levenshtein_nfc_vs_nfd_compares_equal_test() {
   // NFC `é` = U+00E9 is one grapheme; NFD `e\u{0301}` is also one
-  // grapheme but distinct from `é` under structural equality. Spec
-  // requires this to report 1 — we do not normalize.
-  distance.levenshtein("café", "cafe\u{0301}") |> should.equal(1)
+  // grapheme and canonically equivalent. Post-#18 the distance
+  // functions pre-normalise to NFC, so the two forms compare as equal.
+  distance.levenshtein("café", "cafe\u{0301}") |> should.equal(0)
 }
 
 pub fn levenshtein_emoji_zwj_family_test() {

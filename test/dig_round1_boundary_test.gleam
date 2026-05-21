@@ -93,12 +93,11 @@ pub fn hamming_flag_vs_two_letters_test() {
 }
 
 pub fn hamming_nfd_vs_nfc_e_acute_test() {
-  // Spec explicitly says no normalisation. NFC "é" is 1 grapheme;
-  // NFD "e\u{0301}" is also 1 grapheme (combining mark joins).
-  // They have equal grapheme count (1) so length matches; but the
-  // graphemes are NOT equal as strings (no normalisation).
+  // Post-#18 the distance functions pre-normalise inputs to NFC, so
+  // NFC "é" (U+00E9) and NFD "e\u{0301}" (U+0065 U+0301) reduce to the
+  // same one-grapheme string and report Hamming distance 0.
   case distance.hamming(e_precomposed, e_combining) {
-    Ok(1) -> Nil
+    Ok(0) -> Nil
     _ -> should.fail()
   }
 }
@@ -380,16 +379,16 @@ pub fn jaro_symmetric_emoji_test() {
 }
 
 // ---------------------------------------------------------------------
-// Hangul jamo: NFC vs NFD — distinct graphemes per spec (no
-// normalisation). Both forms should still be one grapheme cluster
-// each (per UAX #29) and distance should be 1.
+// Hangul jamo: NFC vs NFD — post-#18 the distance functions
+// pre-normalise to NFC, so the decomposed jamo collapses to the
+// precomposed syllable and the distance is 0.
 // ---------------------------------------------------------------------
 
 pub fn hangul_nfc_vs_decomposed_levenshtein_test() {
   // "가" (NFC, single codepoint) vs "\u{1100}\u{1161}" (decomposed
-  // jamo). Per UAX #29 both are a single grapheme cluster, but the
-  // graphemes themselves are distinct strings. Distance = 1.
-  distance.levenshtein("가", "\u{1100}\u{1161}") |> should.equal(1)
+  // jamo). Post-#18 NFC normalisation folds the decomposed form back
+  // to the precomposed syllable, so distance = 0.
+  distance.levenshtein("가", "\u{1100}\u{1161}") |> should.equal(0)
 }
 
 // ---------------------------------------------------------------------
@@ -447,8 +446,9 @@ pub fn nfd_e_acute_is_one_grapheme_test() {
 }
 
 pub fn levenshtein_nfc_vs_nfd_e_acute_test() {
-  // Each is one grapheme; they differ as strings, so distance = 1.
-  distance.levenshtein(e_precomposed, e_combining) |> should.equal(1)
+  // Post-#18 NFC pre-normalisation folds NFD "e\u{0301}" back to the
+  // precomposed "é", so distance = 0.
+  distance.levenshtein(e_precomposed, e_combining) |> should.equal(0)
 }
 
 // ---------------------------------------------------------------------
