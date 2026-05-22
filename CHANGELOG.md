@@ -9,6 +9,7 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ### Changed
 
+- `textmetrics/readability` grade-level scores — `flesch_kincaid_grade`, `gunning_fog`, `automated_readability_index`, and `coleman_liau_index` — now clamp their result to `[0.0, 18.0]` (US K–12 + graduate range). Synthetic inputs previously produced negative values (e.g. `-8.33`) or absurd 40+ scores. Each function has a matching `_unbounded` variant that returns the raw formula output for callers who need it. (#22)
 - `textmetrics/readability.flesch_reading_ease` now clamps its result to `[0.0, 100.0]` to match the standard reporting convention used by Wikipedia, Microsoft Word, Python `textstat`'s default, and most readability UIs. Synthetic inputs that previously produced `119+` or `-245` values now report `100.0` / `0.0`. Callers who need the raw 206.835 − 1.015 × (words/sentences) − 84.6 × (syllables/words) value can switch to the new `flesch_reading_ease_unbounded`. (#21)
 
 ## [0.6.0] - 2026-05-21
