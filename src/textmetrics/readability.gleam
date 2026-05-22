@@ -147,9 +147,20 @@ fn clamp_float(value: Float, lo lo: Float, hi hi: Float) -> Float {
 /// ```
 ///
 /// The output approximates the US school grade required to comprehend
-/// the text. Negative scores are returned as-is and signal text below
-/// 1st-grade complexity.
+/// the text. The result is clamped to `[0.0, 18.0]` (US K–12 plus
+/// graduate range) so synthetic inputs cannot produce `-2.88` or
+/// `49+`. Use
+/// [`flesch_kincaid_grade_unbounded`](#flesch_kincaid_grade_unbounded)
+/// for the raw value.
 pub fn flesch_kincaid_grade(text: String) -> Result(Float, ReadabilityError) {
+  use raw <- result_try(flesch_kincaid_grade_unbounded(text))
+  Ok(clamp_float(raw, lo: 0.0, hi: 18.0))
+}
+
+/// Flesch–Kincaid Grade Level without the `[0.0, 18.0]` clamp.
+pub fn flesch_kincaid_grade_unbounded(
+  text: String,
+) -> Result(Float, ReadabilityError) {
   let c = build_counts(text)
   use _ <- result_try(require_words(c, 1))
   use _ <- result_try(require_sentences(c, 1))
@@ -177,8 +188,16 @@ pub fn flesch_kincaid_grade(text: String) -> Result(Float, ReadabilityError) {
 /// the formula directly.
 ///
 /// Output approximates the years of formal education required to
-/// understand the text on first reading.
+/// understand the text on first reading. The result is clamped to
+/// `[0.0, 18.0]`; use [`gunning_fog_unbounded`](#gunning_fog_unbounded)
+/// for the raw value.
 pub fn gunning_fog(text: String) -> Result(Float, ReadabilityError) {
+  use raw <- result_try(gunning_fog_unbounded(text))
+  Ok(clamp_float(raw, lo: 0.0, hi: 18.0))
+}
+
+/// Gunning Fog Index without the `[0.0, 18.0]` clamp.
+pub fn gunning_fog_unbounded(text: String) -> Result(Float, ReadabilityError) {
   let c = build_counts(text)
   use _ <- result_try(require_words(c, 1))
   use _ <- result_try(require_sentences(c, 1))
@@ -231,7 +250,18 @@ pub fn smog(text: String) -> Result(Float, ReadabilityError) {
 /// whitespace and punctuation. ARI is the only formula in this
 /// module that treats digits as score-bearing characters; texts
 /// containing large numeric runs will score correspondingly higher.
+/// The result is clamped to `[0.0, 18.0]`; use
+/// [`automated_readability_index_unbounded`](#automated_readability_index_unbounded)
+/// for the raw value.
 pub fn automated_readability_index(
+  text: String,
+) -> Result(Float, ReadabilityError) {
+  use raw <- result_try(automated_readability_index_unbounded(text))
+  Ok(clamp_float(raw, lo: 0.0, hi: 18.0))
+}
+
+/// Automated Readability Index without the `[0.0, 18.0]` clamp.
+pub fn automated_readability_index_unbounded(
   text: String,
 ) -> Result(Float, ReadabilityError) {
   let c = build_counts(text)
@@ -262,7 +292,19 @@ pub fn automated_readability_index(
 /// [`count.characters`](./count.html#characters) definition (letters
 /// + digits), so digit-heavy text scores slightly higher than its
 /// pure-prose equivalent.
+///
+/// The result is clamped to `[0.0, 18.0]`; use
+/// [`coleman_liau_index_unbounded`](#coleman_liau_index_unbounded) for
+/// the raw value.
 pub fn coleman_liau_index(text: String) -> Result(Float, ReadabilityError) {
+  use raw <- result_try(coleman_liau_index_unbounded(text))
+  Ok(clamp_float(raw, lo: 0.0, hi: 18.0))
+}
+
+/// Coleman–Liau Index without the `[0.0, 18.0]` clamp.
+pub fn coleman_liau_index_unbounded(
+  text: String,
+) -> Result(Float, ReadabilityError) {
   let c = build_counts(text)
   use _ <- result_try(require_words(c, 1))
   use _ <- result_try(require_sentences(c, 1))
