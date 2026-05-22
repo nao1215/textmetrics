@@ -7,6 +7,8 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-22
+
 ### Added
 
 - `textmetrics/readability.smog_g` — extrapolated SMOG for texts shorter than 30 sentences. Reuses the same `30 / sentences` scaling SMOG already uses internally, but drops the 30-sentence gate so a typical Wikipedia paragraph, press release, tweet, or email can now be scored. The strict `smog` is unchanged and still returns `Error(TooFewSentences)` below 30 sentences. The two agree to within ~1 grade for 30+ sentences. (#23)
