@@ -188,7 +188,7 @@ pub fn syllables_in_word(word: String) -> Int {
   let letters =
     lowered
     |> string.to_graphemes
-    |> list.filter(keeping: is_ascii_letter)
+    |> list.filter(keeping: is_syllable_relevant_letter)
   case letters {
     [] ->
       case has_any_grapheme(lowered) {
@@ -196,6 +196,17 @@ pub fn syllables_in_word(word: String) -> Int {
         False -> 0
       }
     _ -> syllables_from_letters(letters)
+  }
+}
+
+/// Letters that participate in the syllable heuristic — ASCII a–z
+/// plus Latin-extended accented vowels. Accented consonants like
+/// `ñ` / `ç` are out of scope here; they get filtered out the same
+/// way uncommon graphemes do. See issue #20.
+fn is_syllable_relevant_letter(g: String) -> Bool {
+  case is_ascii_letter(g) {
+    True -> True
+    False -> is_vowel_letter(g, False)
   }
 }
 
@@ -247,7 +258,23 @@ fn count_vowel_groups(
 fn is_vowel_letter(g: String, at_start: Bool) -> Bool {
   case g {
     "a" | "e" | "i" | "o" | "u" -> True
-    "y" ->
+    // Latin-1 accented vowels (Issue #20). The lower-case forms cover
+    // input because the count pipeline lowercases letters before this
+    // check, but the upper-case set is included for callers that
+    // bypass that pipeline.
+    "à" | "á" | "â" | "ã" | "ä" | "å" | "ā" | "ă" | "ą" -> True
+    "è" | "é" | "ê" | "ë" | "ē" | "ĕ" | "ė" | "ę" | "ě" -> True
+    "ì" | "í" | "î" | "ï" | "ĩ" | "ī" | "ĭ" | "į" -> True
+    "ò" | "ó" | "ô" | "õ" | "ö" | "ø" | "ō" | "ŏ" | "ő" -> True
+    "ù" | "ú" | "û" | "ü" | "ũ" | "ū" | "ŭ" | "ů" | "ű" | "ų" -> True
+    "ý" | "ÿ" -> True
+    "À" | "Á" | "Â" | "Ã" | "Ä" | "Å" | "Ā" | "Ă" | "Ą" -> True
+    "È" | "É" | "Ê" | "Ë" | "Ē" | "Ĕ" | "Ė" | "Ę" | "Ě" -> True
+    "Ì" | "Í" | "Î" | "Ï" | "Ĩ" | "Ī" | "Ĭ" | "Į" -> True
+    "Ò" | "Ó" | "Ô" | "Õ" | "Ö" | "Ø" | "Ō" | "Ŏ" | "Ő" -> True
+    "Ù" | "Ú" | "Û" | "Ü" | "Ũ" | "Ū" | "Ŭ" | "Ů" | "Ű" | "Ų" -> True
+    "Ý" | "Ÿ" -> True
+    "y" | "Y" ->
       case at_start {
         True -> False
         False -> True
