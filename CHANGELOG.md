@@ -7,6 +7,10 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ## [Unreleased]
 
+### Changed
+
+- `textmetrics/readability.flesch_reading_ease` now clamps its result to `[0.0, 100.0]` to match the standard reporting convention used by Wikipedia, Microsoft Word, Python `textstat`'s default, and most readability UIs. Synthetic inputs that previously produced `119+` or `-245` values now report `100.0` / `0.0`. Callers who need the raw 206.835 − 1.015 × (words/sentences) − 84.6 × (syllables/words) value can switch to the new `flesch_reading_ease_unbounded`. (#21)
+
 ## [0.6.0] - 2026-05-21
 
 ### Fixed

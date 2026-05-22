@@ -96,20 +96,46 @@ fn to_float(n: Int) -> Float {
 /// - `30–50`  — college
 /// - `0–30`   — college graduate
 ///
-/// The raw formula is not clamped, so unusually short or syllable-poor
-/// text can produce scores above `100` (and unusually dense academic
-/// prose can produce scores below `0`).
+/// The result is clamped to `[0.0, 100.0]` to match the standard
+/// reporting convention used by Wikipedia, Microsoft Word, Python
+/// `textstat`'s default, and most readability UIs. Use
+/// [`flesch_reading_ease_unbounded`](#flesch_reading_ease_unbounded)
+/// when you need the raw formula output (which can exceed `100` for
+/// unusually short or syllable-poor text, and drop below `0` for
+/// unusually dense academic prose).
 ///
 /// Returns [`TooFewWords`](#ReadabilityError) for input with no words,
 /// and [`TooFewSentences`](#ReadabilityError) for input with no
 /// sentence-shaped content.
 pub fn flesch_reading_ease(text: String) -> Result(Float, ReadabilityError) {
+  use raw <- result_try(flesch_reading_ease_unbounded(text))
+  Ok(clamp_float(raw, lo: 0.0, hi: 100.0))
+}
+
+/// Flesch Reading Ease without the standard `[0.0, 100.0]` clamp.
+/// Returns the raw 206.835 − 1.015 × (words/sentences) − 84.6 ×
+/// (syllables/words) value, which can exceed `100` for unusually
+/// short text and drop below `0` for unusually dense prose.
+pub fn flesch_reading_ease_unbounded(
+  text: String,
+) -> Result(Float, ReadabilityError) {
   let c = build_counts(text)
   use _ <- result_try(require_words(c, 1))
   use _ <- result_try(require_sentences(c, 1))
   let wps = to_float(c.words) /. to_float(c.sentences)
   let spw = to_float(c.syllables) /. to_float(c.words)
   Ok(206.835 -. 1.015 *. wps -. 84.6 *. spw)
+}
+
+fn clamp_float(value: Float, lo lo: Float, hi hi: Float) -> Float {
+  case value <. lo {
+    True -> lo
+    False ->
+      case value >. hi {
+        True -> hi
+        False -> value
+      }
+  }
 }
 
 // --- Flesch–Kincaid Grade Level ------------------------------------------
