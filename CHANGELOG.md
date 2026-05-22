@@ -7,6 +7,10 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ## [Unreleased]
 
+### Fixed
+
+- `textmetrics/count.syllables` / `syllables_in_word` now treat Latin-extended accented vowels (`á à â ã ä å ā ă ą`, `é è ê ë ē ĕ ė ę ě`, `í ì î ï ĩ ī ĭ į`, `ó ò ô õ ö ø ō ŏ ő`, `ú ù û ü ũ ū ŭ ů ű ų`, `ý ÿ`, and their upper-case forms) as syllable nuclei. `syllables_in_word("café")` now returns `2` (was `1`), `"résumé"` returns `3`, `"Zürich"` returns `2`. Downstream readability scores (Flesch RE, FKG, Gunning Fog, SMOG, ARI) no longer skew "easier" on text with accented words. ASCII-only words are unaffected. (#20)
+
 ### Changed
 
 - `textmetrics/readability` grade-level scores — `flesch_kincaid_grade`, `gunning_fog`, `automated_readability_index`, and `coleman_liau_index` — now clamp their result to `[0.0, 18.0]` (US K–12 + graduate range). Synthetic inputs previously produced negative values (e.g. `-8.33`) or absurd 40+ scores. Each function has a matching `_unbounded` variant that returns the raw formula output for callers who need it. (#22)
