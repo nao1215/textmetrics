@@ -89,17 +89,21 @@ fn is_letter_like_code(n: Int) -> Bool {
 /// one sentence). A trailing non-empty fragment that lacks a
 /// terminator still counts as a sentence (`"hello"` → 1).
 ///
-/// This implementation does **not** special-case abbreviations like
-/// `Mr.`, `Dr.`, `e.g.`. Text dense in such abbreviations will be
-/// over-segmented. Callers that need abbreviation-aware segmentation
-/// should pre-process.
+/// Common English abbreviations whose period is internal — `Mr.`,
+/// `Mrs.`, `Ms.`, `Dr.`, `Prof.`, `Jr.`, `Sr.`, `St.`, `vs.`, `etc.`,
+/// `Mon.` ... `Sun.`, `Jan.` ... `Dec.` — are NOT treated as sentence
+/// terminators. The check is case-insensitive and looks at the last
+/// non-whitespace token before the period.
+///
+/// Multi-period abbreviations (`e.g.`, `i.e.`, `U.S.`, `a.m.`) are
+/// not yet handled — they need lookahead or a per-segment token buffer.
 ///
 /// Empty input returns `0`.
 pub fn sentences(text: String) -> Int {
   let graphemes = string.to_graphemes(text)
   case has_non_whitespace(graphemes) {
     False -> 0
-    True -> sentence_loop(graphemes, False, False, 0)
+    True -> sentence_loop(graphemes, False, False, [], 0)
   }
 }
 
@@ -107,6 +111,7 @@ fn sentence_loop(
   items: List(String),
   saw_content: Bool,
   in_terminator: Bool,
+  current_word: List(String),
   acc: Int,
 ) -> Int {
   case items {
@@ -118,18 +123,46 @@ fn sentence_loop(
     [g, ..rest] -> {
       case is_terminator(g), is_whitespace(g) {
         True, _ -> {
-          let next_acc = case in_terminator {
-            True -> acc
-            False ->
+          // For `.`, suppress termination when the preceding token
+          // matches a known abbreviation. `!` and `?` always terminate.
+          let suppress = case g {
+            "." -> is_abbreviation(current_word)
+            _ -> False
+          }
+          let next_acc = case suppress, in_terminator {
+            True, _ -> acc
+            False, True -> acc
+            False, False ->
               case saw_content {
                 True -> acc + 1
                 False -> acc
               }
           }
-          sentence_loop(rest, False, True, next_acc)
+          let next_in_terminator = case suppress {
+            True -> False
+            False -> True
+          }
+          let next_saw_content = case suppress {
+            True -> saw_content
+            False -> False
+          }
+          let next_word = case suppress {
+            // Keep the abbreviation token attached to the period so
+            // multi-period abbreviations like "e.g." chain correctly.
+            True -> [".", ..current_word]
+            False -> []
+          }
+          sentence_loop(
+            rest,
+            next_saw_content,
+            next_in_terminator,
+            next_word,
+            next_acc,
+          )
         }
-        False, True -> sentence_loop(rest, saw_content, False, acc)
-        False, False -> sentence_loop(rest, True, False, acc)
+        False, True -> sentence_loop(rest, saw_content, False, [], acc)
+        False, False ->
+          sentence_loop(rest, True, False, [g, ..current_word], acc)
       }
     }
   }
@@ -138,6 +171,27 @@ fn sentence_loop(
 fn is_terminator(g: String) -> Bool {
   case g {
     "." | "!" | "?" -> True
+    _ -> False
+  }
+}
+
+fn is_abbreviation(reversed_word: List(String)) -> Bool {
+  let word =
+    reversed_word
+    |> list.reverse
+    |> string.concat
+    |> string.lowercase
+  case word {
+    "mr" | "mrs" | "ms" | "dr" | "prof" | "jr" | "sr" | "st" -> True
+    "vs" | "etc" | "no" | "co" | "inc" | "ltd" | "fig" | "vol" | "ch" -> True
+    // Multi-period abbreviations: e.g. → "e.g", i.e. → "i.e", U.S. → "u.s".
+    "e.g" | "i.e" | "u.s" | "u.k" | "a.m" | "p.m" -> True
+    // Months (3-letter and 4-letter forms).
+    "jan" | "feb" | "mar" | "apr" | "jun" | "jul" -> True
+    "aug" | "sep" | "sept" | "oct" | "nov" | "dec" -> True
+    // Days of week.
+    "mon" | "tue" | "tues" | "wed" | "thu" | "thur" | "thurs" -> True
+    "fri" | "sat" | "sun" -> True
     _ -> False
   }
 }

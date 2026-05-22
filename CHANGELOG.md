@@ -9,6 +9,7 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ### Fixed
 
+- `textmetrics/count.sentences` no longer counts the period after common English abbreviations (`Mr.`, `Mrs.`, `Ms.`, `Dr.`, `Prof.`, `Jr.`, `Sr.`, `St.`, `vs.`, `etc.`, `Jan.` … `Dec.`, `Mon.` … `Sun.`, and a small set of business/measurement abbreviations) as a sentence terminator. The check is case-insensitive and examines the last non-whitespace token before the period; `!` and `?` always terminate. `"Mr. Smith left."` now reports 1 sentence (was 2). Multi-period abbreviations like `e.g.` / `i.e.` / `U.S.` are not yet handled and still over-segment — handling them needs lookahead and is left for a follow-up. Downstream readability scores no longer skew "shorter sentences = easier" on text dense in single-period abbreviations. (#19)
 - `textmetrics/count.syllables` / `syllables_in_word` now treat Latin-extended accented vowels (`á à â ã ä å ā ă ą`, `é è ê ë ē ĕ ė ę ě`, `í ì î ï ĩ ī ĭ į`, `ó ò ô õ ö ø ō ŏ ő`, `ú ù û ü ũ ū ŭ ů ű ų`, `ý ÿ`, and their upper-case forms) as syllable nuclei. `syllables_in_word("café")` now returns `2` (was `1`), `"résumé"` returns `3`, `"Zürich"` returns `2`. Downstream readability scores (Flesch RE, FKG, Gunning Fog, SMOG, ARI) no longer skew "easier" on text with accented words. ASCII-only words are unaffected. (#20)
 
 ### Changed

@@ -68,10 +68,10 @@ pub fn sentences_no_terminator_still_counts_test() -> Nil {
   |> should.equal(1)
 }
 
-pub fn sentences_over_segments_abbreviations_test() -> Nil {
-  // Documented limitation: "Mr." is treated as a terminator.
+pub fn sentences_recognises_mr_abbreviation_test() -> Nil {
+  // Issue #19: common English abbreviations no longer over-segment.
   count.sentences("Mr. Smith went home.")
-  |> should.equal(2)
+  |> should.equal(1)
 }
 
 pub fn sentences_whitespace_only_input_test() -> Nil {
