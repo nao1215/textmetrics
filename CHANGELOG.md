@@ -7,6 +7,10 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ## [Unreleased]
 
+### Added
+
+- `textmetrics/readability.smog_g` — extrapolated SMOG for texts shorter than 30 sentences. Reuses the same `30 / sentences` scaling SMOG already uses internally, but drops the 30-sentence gate so a typical Wikipedia paragraph, press release, tweet, or email can now be scored. The strict `smog` is unchanged and still returns `Error(TooFewSentences)` below 30 sentences. The two agree to within ~1 grade for 30+ sentences. (#23)
+
 ### Fixed
 
 - `textmetrics/count.sentences` no longer counts the period after common English abbreviations (`Mr.`, `Mrs.`, `Ms.`, `Dr.`, `Prof.`, `Jr.`, `Sr.`, `St.`, `vs.`, `etc.`, `Jan.` … `Dec.`, `Mon.` … `Sun.`, and a small set of business/measurement abbreviations) as a sentence terminator. The check is case-insensitive and examines the last non-whitespace token before the period; `!` and `?` always terminate. `"Mr. Smith left."` now reports 1 sentence (was 2). Multi-period abbreviations like `e.g.` / `i.e.` / `U.S.` are not yet handled and still over-segment — handling them needs lookahead and is left for a follow-up. Downstream readability scores no longer skew "shorter sentences = easier" on text dense in single-period abbreviations. (#19)

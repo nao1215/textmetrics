@@ -224,6 +224,28 @@ pub fn smog(text: String) -> Result(Float, ReadabilityError) {
   let c = build_counts(text)
   use _ <- result_try(require_words(c, 1))
   use _ <- result_try(require_sentences(c, 30))
+  Ok(smog_from_counts(c))
+}
+
+/// SMOG-G — the same formula as SMOG, applied to texts shorter than
+/// 30 sentences via the same `30 / sentences` scaling already used
+/// inside SMOG. Issue #23: real-world snippets (a Wikipedia paragraph,
+/// a press release, a tweet, an email) almost never have 30 sentences,
+/// so the strict SMOG gate rules them all out. SMOG-G drops the gate
+/// and returns the extrapolated grade for any non-empty input with
+/// at least one sentence.
+///
+/// Use [`smog`](#smog) when you have 30+ sentences and need the
+/// statistically calibrated form; use `smog_g` for everything else.
+/// The two agree to within ~1 grade for 30+ sentences.
+pub fn smog_g(text: String) -> Result(Float, ReadabilityError) {
+  let c = build_counts(text)
+  use _ <- result_try(require_words(c, 1))
+  use _ <- result_try(require_sentences(c, 1))
+  Ok(smog_from_counts(c))
+}
+
+fn smog_from_counts(c: Counts) -> Float {
   let polys = to_float(c.polysyllables)
   let scale = 30.0 /. to_float(c.sentences)
   // `polys × scale` is always >= 0 (polysyllables ≥ 0, sentences > 0
@@ -234,7 +256,7 @@ pub fn smog(text: String) -> Result(Float, ReadabilityError) {
     Ok(r) -> r
     Error(_) -> 0.0
   }
-  Ok(1.043 *. root +. 3.1291)
+  1.043 *. root +. 3.1291
 }
 
 // --- Automated Readability Index -----------------------------------------
