@@ -450,7 +450,11 @@ fn list_to_dict(items: List(t)) -> Dict(Int, t) {
   list_to_dict_loop(items, 0, dict.new())
 }
 
-fn list_to_dict_loop(items: List(t), i: Int, acc: Dict(Int, t)) -> Dict(Int, t) {
+fn list_to_dict_loop(
+  items: List(t),
+  i: Int,
+  acc: Dict(Int, t),
+) -> Dict(Int, t) {
   case items {
     [] -> acc
     [x, ..rest] -> list_to_dict_loop(rest, i + 1, dict.insert(acc, i, x))

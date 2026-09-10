@@ -67,7 +67,10 @@ fn require_words(c: Counts, at_least: Int) -> Result(Nil, ReadabilityError) {
   }
 }
 
-fn require_sentences(c: Counts, at_least: Int) -> Result(Nil, ReadabilityError) {
+fn require_sentences(
+  c: Counts,
+  at_least: Int,
+) -> Result(Nil, ReadabilityError) {
   case c.sentences >= at_least {
     True -> Ok(Nil)
     False -> Error(TooFewSentences(at_least: at_least, got: c.sentences))
