@@ -7,13 +7,15 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-11
+
 ### Changed
 
 - The minimum Gleam version is now 1.14.0 (was 1.15.0). 1.14.0 builds and tests the package unchanged on both targets, and `gleam_stdlib` 1.0 already requires it. CI tests that floor alongside the latest Gleam 1.x.
 
 ### Fixed
 
-- `textmetrics/count.sentences` no longer splits sentences at multi-period abbreviations or at periods inside a token. A period followed directly by a letter or digit (`3.50`, `example.com`, the first period of `p.m.`) never ends a sentence, and a period that closes an abbreviation made of one- or two-letter parts (`e.g.`, `i.e.`, `a.m.`, `p.m.`, `U.S.`, `U.S.A.`, `Ph.D.`) ends one only when the next word is capitalised: `"He left at 5 p.m. yesterday."` is now 1 sentence (was 3) and `"at 5 p.m. Then he left."` stays 2. `Ave.` and `Blvd.` join the single-period abbreviations. Readability scores built on sentence counts change accordingly for such text. (#33)
+- `textmetrics/count.sentences` no longer splits sentences at multi-period abbreviations or at periods inside a token. A period followed directly by a letter or digit (`3.50`, `example.com`, the first period of `p.m.`) never ends a sentence, and a period that closes an abbreviation made of one- or two-letter parts (`e.g.`, `i.e.`, `a.m.`, `p.m.`, `U.S.`, `U.S.A.`, `Ph.D.`) ends one only when the next word is capitalised: `"He left at 5 p.m. yesterday."` is now 1 sentence (was 3) and `"at 5 p.m. Then he left."` is 2. `Ave.` and `Blvd.` join the single-period abbreviations. Readability scores built on sentence counts change accordingly for such text. (#33)
 
 ## [0.7.0] - 2026-05-22
 
