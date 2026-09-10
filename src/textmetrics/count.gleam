@@ -89,14 +89,19 @@ fn is_letter_like_code(n: Int) -> Bool {
 /// one sentence). A trailing non-empty fragment that lacks a
 /// terminator still counts as a sentence (`"hello"` → 1).
 ///
-/// Common English abbreviations whose period is internal — `Mr.`,
-/// `Mrs.`, `Ms.`, `Dr.`, `Prof.`, `Jr.`, `Sr.`, `St.`, `vs.`, `etc.`,
-/// `Mon.` ... `Sun.`, `Jan.` ... `Dec.` — are NOT treated as sentence
-/// terminators. The check is case-insensitive and looks at the last
-/// non-whitespace token before the period.
+/// A `.` does not end a sentence when:
 ///
-/// Multi-period abbreviations (`e.g.`, `i.e.`, `U.S.`, `a.m.`) are
-/// not yet handled — they need lookahead or a per-segment token buffer.
+/// - a letter or digit follows it directly, as inside `3.50`,
+///   `example.com`, or the first period of `p.m.`;
+/// - it follows a common English abbreviation — `Mr.`, `Mrs.`, `Ms.`,
+///   `Dr.`, `Prof.`, `Jr.`, `Sr.`, `St.`, `Ave.`, `Blvd.`, `vs.`,
+///   `etc.`, `Inc.`, `Ltd.`, `Mon.` ... `Sun.`, `Jan.` ... `Dec.` and a
+///   few more (case-insensitive);
+/// - it closes a multi-period abbreviation made of one- or two-letter
+///   parts — `e.g.`, `i.e.`, `a.m.`, `p.m.`, `U.S.`, `U.S.A.`, `Ph.D.` —
+///   unless the next word starts with a capital letter, so
+///   `"at 5 p.m. yesterday."` is one sentence and
+///   `"at 5 p.m. Then he left."` is two.
 ///
 /// Empty input returns `0`.
 pub fn sentences(text: String) -> Int {
@@ -123,10 +128,10 @@ fn sentence_loop(
     [g, ..rest] -> {
       case is_terminator(g), is_whitespace(g) {
         True, _ -> {
-          // For `.`, suppress termination when the preceding token
-          // matches a known abbreviation. `!` and `?` always terminate.
+          // For `.`, suppress termination inside a token or after an
+          // abbreviation. `!` and `?` always terminate.
           let suppress = case g {
-            "." -> is_abbreviation(current_word)
+            "." -> period_continues_sentence(current_word, rest)
             _ -> False
           }
           let next_acc = case suppress, in_terminator {
@@ -175,17 +180,31 @@ fn is_terminator(g: String) -> Bool {
   }
 }
 
-fn is_abbreviation(reversed_word: List(String)) -> Bool {
+/// `reversed_word` is the token before the period, graphemes reversed,
+/// with the periods of a multi-period abbreviation kept in it (`"p.m"`
+/// for the second period of `p.m.`). `rest` is the text after it.
+fn period_continues_sentence(
+  reversed_word: List(String),
+  rest: List(String),
+) -> Bool {
   let word =
     reversed_word
     |> list.reverse
     |> string.concat
     |> string.lowercase
+  case rest {
+    [next, ..] -> is_letter_like(next)
+    [] -> False
+  }
+  || is_abbreviation(word)
+  || { is_multi_period_abbreviation(word) && !starts_capitalised(rest) }
+}
+
+fn is_abbreviation(word: String) -> Bool {
   case word {
     "mr" | "mrs" | "ms" | "dr" | "prof" | "jr" | "sr" | "st" -> True
     "vs" | "etc" | "no" | "co" | "inc" | "ltd" | "fig" | "vol" | "ch" -> True
-    // Multi-period abbreviations: e.g. → "e.g", i.e. → "i.e", U.S. → "u.s".
-    "e.g" | "i.e" | "u.s" | "u.k" | "a.m" | "p.m" -> True
+    "ave" | "blvd" -> True
     // Months (3-letter and 4-letter forms).
     "jan" | "feb" | "mar" | "apr" | "jun" | "jul" -> True
     "aug" | "sep" | "sept" | "oct" | "nov" | "dec" -> True
@@ -193,6 +212,28 @@ fn is_abbreviation(reversed_word: List(String)) -> Bool {
     "mon" | "tue" | "tues" | "wed" | "thu" | "thur" | "thurs" -> True
     "fri" | "sat" | "sun" -> True
     _ -> False
+  }
+}
+
+/// Two or more one- or two-letter parts joined by periods: `e.g`, `a.m`,
+/// `u.s.a`, `ph.d`.
+fn is_multi_period_abbreviation(word: String) -> Bool {
+  case string.split(word, on: ".") {
+    [_] -> False
+    parts ->
+      list.all(parts, fn(part) {
+        let letters = string.to_graphemes(part)
+        let length = list.length(letters)
+        length >= 1 && length <= 2 && list.all(letters, is_ascii_letter)
+      })
+  }
+}
+
+fn starts_capitalised(rest: List(String)) -> Bool {
+  case list.drop_while(rest, is_whitespace) {
+    [next, ..] ->
+      string.uppercase(next) == next && string.lowercase(next) != next
+    [] -> False
   }
 }
 
