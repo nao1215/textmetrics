@@ -421,7 +421,11 @@ fn list_to_dict(items: List(t)) -> Dict(Int, t) {
   list_to_dict_loop(items, 0, dict.new())
 }
 
-fn list_to_dict_loop(items: List(t), i: Int, acc: Dict(Int, t)) -> Dict(Int, t) {
+fn list_to_dict_loop(
+  items: List(t),
+  i: Int,
+  acc: Dict(Int, t),
+) -> Dict(Int, t) {
   case items {
     [] -> acc
     [x, ..rest] -> list_to_dict_loop(rest, i + 1, dict.insert(acc, i, x))
@@ -438,7 +442,11 @@ fn int_range_inclusive(start: Int, end: Int) -> List(Int) {
   int_range_inclusive_loop(start, end, [])
 }
 
-fn int_range_inclusive_loop(current: Int, end: Int, acc: List(Int)) -> List(Int) {
+fn int_range_inclusive_loop(
+  current: Int,
+  end: Int,
+  acc: List(Int),
+) -> List(Int) {
   case current > end {
     True -> list.reverse(acc)
     False -> int_range_inclusive_loop(current + 1, end, [current, ..acc])

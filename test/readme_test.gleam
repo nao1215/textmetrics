@@ -71,7 +71,10 @@ pub fn readme_levenshtein_similarity_test() {
 // Hamming requires equal-length inputs
 // ---------------------------------------------------------------------
 
-pub fn hamming_check(a: String, b: String) -> Result(Int, distance.HammingError) {
+pub fn hamming_check(
+  a: String,
+  b: String,
+) -> Result(Int, distance.HammingError) {
   distance.hamming(a, b)
 }
 
