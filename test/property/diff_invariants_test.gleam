@@ -31,10 +31,11 @@ const line_pairs: List(#(List(String), List(String))) = [
   #(["a"], []),
   #(["a", "b", "c"], ["a", "b", "c"]),
   #(["a", "b", "c"], ["a", "x", "c"]),
-  #(
-    ["the quick brown", "fox jumps over", "the lazy dog"],
-    ["the quick brown", "fox leaps over", "the lazy dog"],
-  ),
+  #(["the quick brown", "fox jumps over", "the lazy dog"], [
+    "the quick brown",
+    "fox leaps over",
+    "the lazy dog",
+  ]),
   #(["one", "two", "three"], ["zero", "one", "two", "three", "four"]),
   #(["a", "a", "a"], ["a", "a"]),
 ]
