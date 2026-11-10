@@ -282,6 +282,23 @@ just ci
 `just` recipes source `scripts/lib/mise_bootstrap.sh`, so `mise activate`
 is not required in the current shell.
 
+## Verifying releases
+
+Each GitHub Release attaches the Hex package tarball (`textmetrics-<version>.tar`),
+`checksums.txt`, a cosign signature bundle (`checksums.txt.sigstore.json`) and
+build provenance (`textmetrics-<version>.intoto.jsonl`). Download the assets, then:
+
+```sh
+gh attestation verify textmetrics-<version>.tar --repo nao1215/textmetrics
+
+cosign verify-blob \
+  --bundle checksums.txt.sigstore.json \
+  --certificate-identity-regexp '^https://github.com/nao1215/textmetrics/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  checksums.txt
+sha256sum --check checksums.txt
+```
+
 ## License
 
 [MIT](LICENSE)
