@@ -173,3 +173,9 @@ pub fn sorensen_dice_bigrams_pipes_into_threshold_test() {
   |> threshold(0.5)
   |> should.be_true
 }
+
+pub fn sorensen_dice_counts_the_one_ngram_of_a_string_of_length_n_test() {
+  // "ab" has exactly one bigram; it is shared with "abc" (ab, bc).
+  let assert Ok(score) = similarity.sorensen_dice("ab", "abc", 2)
+  approx_equal(score, 2.0 /. 3.0) |> should.be_true
+}
