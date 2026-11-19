@@ -285,6 +285,17 @@ just ci
 `just` recipes source `scripts/lib/mise_bootstrap.sh`, so `mise activate`
 is not required in the current shell.
 
+## Testing
+
+| Technique | Bug class caught here |
+|---|---|
+| Examples and unit tests | [Wrong values against published examples, Unicode edge cases](doc/testing.md#examples-and-unit-tests) |
+| Generated properties | [Broken metric axioms, edit scripts that do not replay](doc/testing.md#generated-properties) |
+| Metamorphic relations | [Distances and diffs that change under reversal or a common prefix](doc/testing.md#metamorphic-relations) |
+| Differential testing | [Optimised distance code that disagrees with the textbook definition](doc/testing.md#differential-testing) |
+| Unified diff round trip | [Hunk headers, counts or context that `patch` would reject](doc/testing.md#unified-diff-round-trip) |
+| Mutation testing | [Assertions that miss a changed operator or branch](doc/testing.md#mutation-testing) |
+
 ## Verifying releases
 
 Each GitHub Release attaches the Hex package tarball (`textmetrics-<version>.tar`),

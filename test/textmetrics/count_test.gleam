@@ -141,6 +141,15 @@ pub fn syllables_cjk_fallback_test() -> Nil {
   |> should.equal(1)
 }
 
+pub fn syllables_count_each_latin1_accented_vowel_family_test() -> Nil {
+  // One word per accented-vowel family, each relying on that family to
+  // reach its count (found by mutation testing: only é and ü were used).
+  count.syllables_in_word("voilà") |> should.equal(2)
+  count.syllables_in_word("nïnï") |> should.equal(2)
+  count.syllables_in_word("côté") |> should.equal(2)
+  count.syllables_in_word("týtý") |> should.equal(2)
+}
+
 // --- characters / paragraphs / polysyllables ----------------------------
 
 pub fn characters_letters_only_test() -> Nil {
