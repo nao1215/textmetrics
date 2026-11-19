@@ -1,10 +1,13 @@
 # textmetrics
 
-[![Package Version](https://img.shields.io/hexpm/v/textmetrics)](https://hex.pm/packages/textmetrics)
-[![Downloads](https://img.shields.io/hexpm/dt/textmetrics)](https://hex.pm/packages/textmetrics)
-[![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/textmetrics/)
 [![CI](https://github.com/nao1215/textmetrics/actions/workflows/ci.yml/badge.svg)](https://github.com/nao1215/textmetrics/actions/workflows/ci.yml)
-[![License](https://img.shields.io/github/license/nao1215/textmetrics)](LICENSE)
+[![Gitleaks](https://github.com/nao1215/textmetrics/actions/workflows/gitleaks.yml/badge.svg)](https://github.com/nao1215/textmetrics/actions/workflows/gitleaks.yml)
+[![Trivy](https://github.com/nao1215/textmetrics/actions/workflows/trivy.yml/badge.svg)](https://github.com/nao1215/textmetrics/actions/workflows/trivy.yml)
+[![OSV-Scanner](https://github.com/nao1215/textmetrics/actions/workflows/osv-scan.yml/badge.svg)](https://github.com/nao1215/textmetrics/actions/workflows/osv-scan.yml)
+[![Hex](https://img.shields.io/hexpm/v/textmetrics)](https://hex.pm/packages/textmetrics)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/textmetrics/)
+[![Hex Downloads](https://img.shields.io/hexpm/dt/textmetrics)](https://hex.pm/packages/textmetrics)
+[![License](https://img.shields.io/github/license/nao1215/textmetrics)](./LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/nao1215/textmetrics/badge)](https://scorecard.dev/viewer/?uri=github.com/nao1215/textmetrics)
 
 String comparison and readability metrics for Gleam: edit distances,
