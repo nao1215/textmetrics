@@ -10,13 +10,9 @@
 [![License](https://img.shields.io/github/license/nao1215/textmetrics)](./LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/nao1215/textmetrics/badge)](https://scorecard.dev/viewer/?uri=github.com/nao1215/textmetrics)
 
-String comparison and readability metrics for Gleam: edit distances,
-similarity scores, longest common subsequence, line-level diff, and
-canonical readability scores (Flesch-Kincaid, Gunning Fog, SMOG, ARI,
-Coleman-Liau) with the word / sentence / syllable count primitives
-they consume.
-
-## Features
+String comparison and readability metrics for Gleam. Pure Gleam, on the
+Erlang and JavaScript targets, working on Unicode grapheme clusters
+(UAX #29).
 
 - Edit distances: Levenshtein, Damerau-Levenshtein (true variant), OSA, Hamming
 - Similarity scores in `[0.0, 1.0]`: Jaro, Jaro-Winkler, Sørensen-Dice
@@ -27,8 +23,6 @@ they consume.
   SMOG, Automated Readability Index, Coleman-Liau
 - Count primitives: words, sentences, syllables, characters, paragraphs,
   polysyllables
-- Pure Gleam, runs on Erlang and JavaScript targets
-- Operates on Unicode grapheme clusters (UAX #29)
 
 ## Install
 
@@ -38,9 +32,8 @@ gleam add textmetrics
 
 ## Suggesting a similar command name
 
-When a user mistypes a subcommand or flag, fall back to a Levenshtein-bounded
-search to suggest the closest known names. Ties are broken by the order they
-appear in `candidates`, which keeps suggestions deterministic.
+`search.did_you_mean` returns the known names within a Levenshtein bound.
+Ties keep the order of `candidates`.
 
 ```gleam
 import textmetrics/search
@@ -55,8 +48,7 @@ pub fn suggest_command(typed: String) -> List(String) {
 // suggest_command("xyz")    -> []
 ```
 
-`search.closest` is the convenience form when only one suggestion is
-needed (the typical "Did you mean `X`?" path).
+`search.closest` returns a single suggestion.
 
 ```gleam
 import gleam/option.{type Option}
@@ -73,11 +65,10 @@ pub fn one_suggestion(typed: String) -> Option(String) {
 
 ## Comparing strings: Levenshtein, Damerau-Levenshtein, OSA
 
-`levenshtein` counts the minimum number of insert / delete / substitute
-operations. `damerau_levenshtein` adds adjacent-grapheme transposition and
-lets the same substring participate in multiple edits. `osa` uses the same
-operations but allows each substring to be edited at most once — that is
-what most "Damerau distance" libraries actually compute.
+`levenshtein` counts inserts, deletes, and substitutions.
+`damerau_levenshtein` also counts adjacent transpositions and lets a
+substring be edited more than once. `osa` edits each substring at most
+once, which is what most "Damerau distance" libraries compute.
 
 ```gleam
 import textmetrics/distance
@@ -92,9 +83,8 @@ pub fn distances() -> #(Int, Int, Int) {
 // distances() -> #(3, 2, 3)
 ```
 
-`distance.normalized_levenshtein` rescales Levenshtein distance to a
-similarity in `[0.0, 1.0]` (`1.0` means identical). Use it when ranking
-by edit distance is preferred over Jaro-Winkler.
+`distance.normalized_levenshtein` turns the distance into a similarity in
+`[0.0, 1.0]`, where `1.0` means identical.
 
 ```gleam
 import textmetrics/distance
@@ -105,9 +95,7 @@ pub fn levenshtein_similarity() -> Float {
 }
 ```
 
-`hamming` requires equal-length inputs and returns
-`Error(LengthMismatch(...))` otherwise, so callers do not have to
-pre-validate the input lengths.
+`hamming` returns `Error(LengthMismatch(...))` when the lengths differ.
 
 ```gleam
 import textmetrics/distance
@@ -125,9 +113,8 @@ pub fn hamming_check(
 
 ## Scoring similarity: Jaro, Jaro-Winkler, Sørensen-Dice
 
-`jaro_winkler` boosts scores for strings that share a common prefix, which
-suits typo tolerance in human names. `sorensen_dice` compares the multiset
-of grapheme n-grams.
+`jaro_winkler` raises the score for a shared prefix, which helps with
+typos in names. `sorensen_dice` compares grapheme n-grams.
 
 ```gleam
 import textmetrics/similarity
@@ -149,9 +136,8 @@ pub fn dice_score() -> Result(Float, similarity.SorensenDiceError) {
 // dice_score()         -> Ok(0.25)
 ```
 
-`jaro_winkler_with` accepts a validated `JaroWinklerConfig` for non-default
-prefix scaling. The smart constructor enforces `prefix_scale ∈ [0.0, 0.25]`
-and `prefix_max >= 0`.
+`jaro_winkler_with` takes a `JaroWinklerConfig` for other prefix scaling.
+Its constructor requires `prefix_scale ∈ [0.0, 0.25]` and `prefix_max >= 0`.
 
 ```gleam
 import gleam/result
@@ -171,9 +157,8 @@ pub fn aggressive_winkler() -> Result(
 
 ## Producing an edit script and a unified diff
 
-`diff.myers` returns an `EditScript` — a list of `Equal | Insert | Delete`
-steps that round-trips both inputs. `to_unified` renders that script in
-the format `diff -u` produces.
+`diff.myers` returns an `EditScript`, a list of `Equal | Insert | Delete`
+steps. `to_unified` renders it in `diff -u` format.
 
 ```gleam
 import textmetrics/diff
@@ -195,14 +180,11 @@ pub fn render_diff() -> String {
 //  the lazy dog
 ```
 
-`diff.unified_options` silently strips bytes that would corrupt the
-`--- <old_name>` / `+++ <new_name>` header (CR, LF, NUL, TAB). For
-caller-supplied paths where you want the bad bytes to surface as a typed
-error instead of being dropped, use `diff.unified_options_checked` — same
-constructor shape, returns a `Result(UnifiedOptions, UnifiedOptionsError)`.
+`diff.unified_options` strips CR, LF, NUL, and TAB from the header names.
+`diff.unified_options_checked` takes the same arguments and returns
+`Result(UnifiedOptions, UnifiedOptionsError)` instead.
 
-`recover_old` and `recover_new` rebuild the inputs from a script. The
-round-trip property is the principal invariant of the `Edit` ADT.
+`recover_old` and `recover_new` rebuild both inputs from a script.
 
 ```gleam
 import textmetrics/diff
@@ -232,17 +214,14 @@ pub fn lcs_example() -> #(Int, List(String)) {
 // lcs_example() -> #(4, ["B", "C", "B", "A"])  // one valid answer
 ```
 
-`lcs.length` is well-defined; `lcs.sequence` returns one valid longest
-common subsequence. Consumers should rely on
-`length(sequence(a, b)) == length(a, b)` rather than on the specific
-subsequence chosen.
+`lcs.sequence` returns one of the longest common subsequences, so rely on
+`length(sequence(a, b)) == length(a, b)`, not on which one it picks.
 
 ## Readability scores
 
-Six canonical English-language readability formulas, plus the count
-primitives they consume. All scores are `Result(Float, _)` so that
-extremely small inputs (the SMOG 30-sentence floor, for example) get
-a typed error instead of a non-finite number.
+Six English readability formulas. Each returns `Result(Float, _)`, so an
+input that is too small (SMOG needs 30 sentences) gets an error instead of
+a non-finite number.
 
 ```gleam
 import textmetrics/readability
@@ -255,24 +234,21 @@ pub fn grade_for(text: String) -> Result(Float, readability.ReadabilityError) {
 // -> Ok(~2.3)   (mid-2nd-grade reading level)
 ```
 
-`textmetrics/count` exposes the primitives in case you want to roll
-your own metric — `count.words`, `count.sentences`,
-`count.syllables_in_word`, `count.syllables`, `count.characters`,
-`count.paragraphs`, `count.polysyllables`. The syllable counter is an
-English-tuned heuristic (silent-`e` rule with the consonant-`le`
-exception). Non-English text falls back to one syllable per word; do
-not interpret the resulting grade as meaningful outside English prose.
+`textmetrics/count` has the counters behind them: `count.words`,
+`count.sentences`, `count.syllables_in_word`, `count.syllables`,
+`count.characters`, `count.paragraphs`, `count.polysyllables`. Syllables
+are counted with an English heuristic (silent `e`, with the consonant-`le`
+exception), and other languages get one syllable per word, so grades only
+mean something for English.
 
 ## Unicode policy
 
-All string-typed functions operate on extended grapheme clusters via
-`gleam/string.to_graphemes`. Inputs are pre-normalised to Unicode
-Normalization Form C (NFC) before comparison, so canonically-equivalent
-strings such as `"\u{00C1}"` (precomposed, `U+00C1`) and `"A\u{0301}"`
-(decomposed, `U+0041 U+0301`) are treated as equal. The NFC step uses
-the platform's built-in normaliser (`unicode:characters_to_nfc_binary/1`
-on Erlang, `String.prototype.normalize("NFC")` on JavaScript), so no
-extra dependency is required.
+String functions work on extended grapheme clusters
+(`gleam/string.to_graphemes`) after NFC normalization, so `"\u{00C1}"`
+(`U+00C1`) and `"A\u{0301}"` (`U+0041 U+0301`) compare equal. NFC uses the
+platform normalizer (`unicode:characters_to_nfc_binary/1` on Erlang,
+`String.prototype.normalize("NFC")` on JavaScript), with no extra
+dependency.
 
 ## Development
 
