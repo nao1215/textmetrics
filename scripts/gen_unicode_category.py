@@ -1,56 +1,99 @@
 #!/usr/bin/env python3
-"""Generate src/textmetrics/internal/unicode_category.gleam.
-
-count treats a grapheme as part of a word when its first code point is a
-letter (L*), mark (M*), decimal digit (Nd) or letter number (Nl). This
-script writes the complement for code points above U+007F: punctuation,
-symbols, separators, other numbers (No) and the assigned control,
-format, surrogate and private-use code points. Unassigned code points
-are folded into whichever side keeps the table short.
+"""Generate the exact non-letter complement from Unicode 15.1.0 data.
 
 Usage:
-  python3 scripts/gen_unicode_category.py > src/textmetrics/internal/unicode_category.gleam
-  gleam format src
+  python3 scripts/gen_unicode_category.py --unicode-data UnicodeData.txt
+  python3 scripts/gen_unicode_category.py --unicode-data UnicodeData.txt --check
+
+The input is an explicitly downloaded, hash-checked UnicodeData.txt. Generation
+never uses the host's Unicode database and never downloads data. Gleam 1.19.2
+formats a temporary file before an atomic replacement of the output.
 """
-import unicodedata
+
+import argparse
+import hashlib
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+UNICODE_VERSION = "15.1.0"
+UNICODE_URL = "https://www.unicode.org/Public/15.1.0/ucd/UnicodeData.txt"
+UNICODE_SHA256 = "2fc713e6a31a87c4850a37fe2caffa4218180fadb5de86b43a143ddb4581fb86"
+GLEAM_VERSION = "1.19.2"
+DEFAULT_OUTPUT = Path(__file__).resolve().parents[1] / "src/textmetrics/internal/unicode_category.gleam"
+CATEGORIES = frozenset(
+    "Lu Ll Lt Lm Lo Mn Mc Me Nd Nl No Pc Pd Ps Pe Pi Pf Po Sm Sc Sk So Zs Zl Zp Cc Cf Cs Co Cn".split()
+)
 
 
-def is_non_letter(cp):
-    category = unicodedata.category(chr(cp))
-    if category == "Cn":
-        return None
-    return not (category[0] in "LM" or category in ("Nd", "Nl"))
+def parse_unicode_data(text):
+    """Expand assigned rows and First/Last ranges; omitted points remain Cn."""
+    categories = ["Cn"] * 0x110000
+    previous = -1
+    pending = None
+    for number, line in enumerate(text.splitlines(), 1):
+        fields = line.split(";")
+        if len(fields) != 15:
+            raise ValueError(f"UnicodeData line {number}: expected 15 fields")
+        try:
+            code = int(fields[0], 16)
+        except ValueError as error:
+            raise ValueError(f"UnicodeData line {number}: invalid code point") from error
+        if not 0 <= code <= 0x10FFFF or code <= previous:
+            raise ValueError(f"UnicodeData line {number}: code points must be in range and strictly increasing")
+        previous = code
+        name, category = fields[1:3]
+        if category not in CATEGORIES:
+            raise ValueError(f"UnicodeData line {number}: unknown category {category!r}")
+        if name.startswith("<") and name.endswith(", First>"):
+            if pending is not None:
+                raise ValueError(f"UnicodeData line {number}: nested First range")
+            pending = (code, name[:-8], category)
+        elif name.startswith("<") and name.endswith(", Last>"):
+            if pending is None:
+                raise ValueError(f"UnicodeData line {number}: Last without First")
+            start, first_name, first_category = pending
+            if name[:-7] != first_name or category != first_category:
+                raise ValueError(f"UnicodeData line {number}: First/Last name or category mismatch")
+            categories[start : code + 1] = [category] * (code - start + 1)
+            pending = None
+        else:
+            if pending is not None:
+                raise ValueError(f"UnicodeData line {number}: First range missing Last")
+            categories[code] = category
+    if pending is not None:
+        raise ValueError("UnicodeData ended with an unterminated First range")
+    return categories
 
 
-def ranges():
-    out, start, last = [], None, None
-    for cp in range(0x80, 0x110000):
-        kind = is_non_letter(cp)
-        if kind is None:
-            continue
-        if kind:
-            if start is None:
-                start = cp
-            last = cp
-        elif start is not None:
-            out.append((start, last))
+def non_letter_ranges(categories):
+    ranges = []
+    start = None
+    for code in range(0x80, 0x110000):
+        category = categories[code]
+        non_letter = not (category[0] in "LM" or category in ("Nd", "Nl"))
+        if non_letter and start is None:
+            start = code
+        elif not non_letter and start is not None:
+            ranges.append((start, code - 1))
             start = None
     if start is not None:
-        out.append((start, 0x10FFFF))
-    return out
+        ranges.append((start, 0x10FFFF))
+    return ranges
 
 
-def main():
+def render(categories):
     buckets = {}
-    for low, high in ranges():
+    for low, high in non_letter_ranges(categories):
         while low <= high:
             block = low >> 8
             end = min(high, (block << 8) | 0xFF)
             buckets.setdefault(block, []).append((low, end))
             low = end + 1
     full, partial = [], []
-    for block in sorted(buckets):
-        parts = buckets[block]
+    for block, parts in sorted(buckets.items()):
         if parts == [(block << 8, (block << 8) | 0xFF)]:
             if full and full[-1][1] == block - 1:
                 full[-1] = (full[-1][0], block)
@@ -59,12 +102,12 @@ def main():
         else:
             partial.append((block, parts))
     lines = [
-        "//// Generated by scripts/gen_unicode_category.py from Unicode "
-        + unicodedata.unidata_version + ". Do not edit.",
+        f"//// Generated by scripts/gen_unicode_category.py from Unicode {UNICODE_VERSION}. Do not edit.",
+        f"//// Source: {UNICODE_URL}",
+        f"//// SHA-256: {UNICODE_SHA256}",
         "",
         "/// True for code points above U+007F that are not letters, marks,",
-        "/// decimal digits or letter numbers: punctuation, symbols, spaces,",
-        "/// other numbers (`①`, `²`) and controls.",
+        "/// decimal digits or letter numbers, including unassigned code points.",
         "pub fn is_non_letter(code: Int) -> Bool {",
         "  case code / 256 {",
     ]
@@ -82,7 +125,53 @@ def main():
         else:
             lines.append(f"    block if block >= 0x{low:x} && block <= 0x{high:x} -> True")
     lines += ["    _ -> False", "  }", "}", ""]
-    print("\n".join(lines))
+    return "\n".join(lines)
 
 
-main()
+def generate(unicode_data, output, check=False):
+    data = unicode_data.read_bytes()
+    digest = hashlib.sha256(data).hexdigest()
+    if digest != UNICODE_SHA256:
+        raise ValueError(f"Unicode {UNICODE_VERSION} input SHA-256 mismatch: expected {UNICODE_SHA256}, got {digest}")
+    source = render(parse_unicode_data(data.decode("utf-8")))
+    version = subprocess.run(["gleam", "--version"], check=True, capture_output=True, text=True).stdout.strip()
+    if version != f"gleam {GLEAM_VERSION}":
+        raise ValueError(f"generation requires gleam {GLEAM_VERSION}; found {version!r}")
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", newline="\n", suffix=".gleam",
+            prefix=f".{output.name}.", dir=output.parent, delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(source)
+        subprocess.run(["gleam", "format", str(temporary)], check=True, capture_output=True, text=True)
+        if check:
+            if temporary.read_bytes() != output.read_bytes():
+                raise ValueError(f"generated output differs from {output}; regenerate it")
+        else:
+            mode = output.stat().st_mode & 0o777 if output.exists() else 0o644
+            temporary.chmod(mode)
+            os.replace(temporary, output)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--unicode-data", type=Path, required=True)
+    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--check", action="store_true")
+    arguments = parser.parse_args(argv)
+    try:
+        generate(arguments.unicode_data, arguments.output, arguments.check)
+    except (OSError, ValueError, subprocess.CalledProcessError) as error:
+        detail = error.stderr if isinstance(error, subprocess.CalledProcessError) else str(error)
+        print(f"Unicode table generation failed: {detail or error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
