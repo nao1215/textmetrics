@@ -10,7 +10,10 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
+import gleam/string
 import textmetrics/distance
+import textmetrics/internal/jaro
+import textmetrics/internal/unicode
 import textmetrics/similarity
 
 /// A scored candidate produced by [`rank_jaro_winkler`](#rank_jaro_winkler).
@@ -49,9 +52,13 @@ pub fn did_you_mean(
   candidates: List(String),
   max_distance: Int,
 ) -> List(String) {
+  // The query is normalised and split once, not once per candidate.
+  let query_graphemes = nfc_graphemes(query)
   candidates
   |> list.index_map(fn(candidate, index) {
-    #(candidate, distance.levenshtein(query, candidate), index)
+    let distance =
+      distance.levenshtein_list(query_graphemes, nfc_graphemes(candidate))
+    #(candidate, distance, index)
   })
   |> list.filter(fn(scored) { scored.1 <= max_distance })
   |> list.sort(by: fn(left, right) {
@@ -104,9 +111,20 @@ pub fn rank_jaro_winkler(
   candidates: List(String),
   top_n: Int,
 ) -> List(Ranked) {
+  let query_graphemes = nfc_graphemes(query)
+  let config = similarity.default_jaro_winkler_config()
+  let prefix_scale = similarity.prefix_scale(config)
+  let prefix_max = similarity.prefix_max(config)
   candidates
   |> list.index_map(fn(candidate, index) {
-    #(candidate, similarity.jaro_winkler(query, candidate), index)
+    let score =
+      jaro.jaro_winkler(
+        query_graphemes,
+        nfc_graphemes(candidate),
+        prefix_scale,
+        prefix_max,
+      )
+    #(candidate, score, index)
   })
   |> list.sort(by: fn(left, right) {
     float.compare(right.1, left.1)
@@ -114,4 +132,8 @@ pub fn rank_jaro_winkler(
   })
   |> list.take(top_n)
   |> list.map(fn(scored) { Ranked(label: scored.0, score: scored.1) })
+}
+
+fn nfc_graphemes(text: String) -> List(String) {
+  string.to_graphemes(unicode.to_nfc(text))
 }
