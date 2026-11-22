@@ -7,21 +7,14 @@
 //// pure, deterministic, and `O(n)` in input length.
 ////
 //// Returned scores are `Float` values; callers should round or
-//// quantise to fit their reporting needs. Empty or extremely small
-//// inputs return [`ReadabilityError`](#ReadabilityError) instead of
-//// non-finite numbers.
+//// quantise to fit their reporting needs. Input with no words returns
+//// [`TooFewWords`](#ReadabilityError) instead of a non-finite number.
 ////
 //// The syllable counter consumed by these formulas is an
 //// English-tuned heuristic (see
 //// [`count.syllables_in_word`](./count.html#syllables_in_word)).
-//// Non-English text will produce scores that match `textstat`'s
-//// fallback behaviour but should not be interpreted as meaningful
+//// Scores for non-English text should not be interpreted as meaningful
 //// grade-level estimates.
-////
-//// Reference scores produced by these implementations agree with
-//// Python `textstat` (the de-facto reference) to within roughly
-//// ±2 on the Reading Ease 0–100 scale and ±1 on grade-level scales,
-//// over a corpus of fixtures from the Wikipedia readability articles.
 
 import gleam/float
 import gleam/int
@@ -107,9 +100,7 @@ fn to_float(n: Int) -> Float {
 /// unusually short or syllable-poor text, and drop below `0` for
 /// unusually dense academic prose).
 ///
-/// Returns [`TooFewWords`](#ReadabilityError) for input with no words,
-/// and [`TooFewSentences`](#ReadabilityError) for input with no
-/// sentence-shaped content.
+/// Returns [`TooFewWords`](#ReadabilityError) for input with no words.
 pub fn flesch_reading_ease(text: String) -> Result(Float, ReadabilityError) {
   use raw <- result_try(flesch_reading_ease_unbounded(text))
   Ok(clamp_float(raw, lo: 0.0, hi: 100.0))
@@ -183,9 +174,8 @@ pub fn flesch_kincaid_grade_unbounded(
 /// A polysyllable here is a word with three or more syllables. The
 /// original Gunning rules excluded proper nouns, hyphenated compounds,
 /// and inflected forms (-es / -ed / -ing) — this implementation
-/// follows Python `textstat` and does **not** apply those
-/// exclusions, so scores match `textstat` rather than the strict
-/// 1952 paper. Callers needing the strict variant can subtract their
+/// does **not** apply those exclusions. Callers needing the strict
+/// variant can subtract their
 /// own exclusion count from
 /// [`count.polysyllables`](./count.html#polysyllables) before applying
 /// the formula directly.
@@ -240,7 +230,7 @@ pub fn smog(text: String) -> Result(Float, ReadabilityError) {
 ///
 /// Use [`smog`](#smog) when you have 30+ sentences and need the
 /// statistically calibrated form; use `smog_g` for everything else.
-/// The two agree to within ~1 grade for 30+ sentences.
+/// For 30 or more sentences both return the same value.
 pub fn smog_g(text: String) -> Result(Float, ReadabilityError) {
   let c = build_counts(text)
   use _ <- result_try(require_words(c, 1))
@@ -272,9 +262,8 @@ fn smog_from_counts(c: Counts) -> Float {
 ///
 /// The `characters` count is `letters + digits + accented graphemes`
 /// (i.e. [`count.characters`](./count.html#characters)) and excludes
-/// whitespace and punctuation. ARI is the only formula in this
-/// module that treats digits as score-bearing characters; texts
-/// containing large numeric runs will score correspondingly higher.
+/// whitespace and punctuation. Digits count as characters, as in
+/// Coleman–Liau.
 /// The result is clamped to `[0.0, 18.0]`; use
 /// [`automated_readability_index_unbounded`](#automated_readability_index_unbounded)
 /// for the raw value.
@@ -314,9 +303,8 @@ pub fn automated_readability_index_unbounded(
 ///
 /// The output approximates the US grade level expected to read the
 /// text comfortably. Like ARI, this formula uses the
-/// [`count.characters`](./count.html#characters) definition (letters
-/// + digits), so digit-heavy text scores slightly higher than its
-/// pure-prose equivalent.
+/// [`count.characters`](./count.html#characters) definition, so a
+/// digit counts as one letter.
 ///
 /// The result is clamped to `[0.0, 18.0]`; use
 /// [`coleman_liau_index_unbounded`](#coleman_liau_index_unbounded) for

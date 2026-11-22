@@ -363,11 +363,12 @@ fn has_non_whitespace(items: List(String)) -> Bool {
 /// Count syllables in a single word using an English heuristic:
 ///
 /// 1. Lowercase the word.
-/// 2. Strip non-ASCII-letter graphemes.
-/// 3. Count maximal vowel groups in `a e i o u y`, with `y` only
-///    counting at non-initial position.
+/// 2. Keep only ASCII letters and accented Latin vowels (`é`, `ü`, ...).
+/// 3. Count maximal vowel groups in `a e i o u y` and the accented
+///    vowels, with `y` only counting at non-initial position.
 /// 4. Subtract one if the word ends in a silent `e` (the preceding
-///    letter being a consonant).
+///    letter being a consonant), except after consonant + `l`
+///    (`table`, `syllable`).
 /// 5. Floor at `1`.
 ///
 /// Examples:
@@ -379,8 +380,8 @@ fn has_non_whitespace(items: List(String)) -> Bool {
 /// count.syllables_in_word("rhythm")    // 1 (no vowels, floors at 1)
 /// ```
 ///
-/// Returns `0` for an empty input. Returns `1` for non-English words
-/// that contain no ASCII letters.
+/// Returns `0` for an empty input. Returns `1` for any other input with
+/// none of the letters kept in step 2 (`"123"`, `"日本"`).
 pub fn syllables_in_word(word: String) -> Int {
   let lowered = string.lowercase(word)
   let letters =
@@ -591,10 +592,9 @@ pub fn characters(text: String) -> Int {
   })
 }
 
-/// Count words with three or more syllables in `text`. This is the
-/// "polysyllable" count consumed by SMOG with **no** exclusions; the
-/// stricter Gunning-Fog "complex word" count is computed inline
-/// inside [`readability.gunning_fog`](./readability.html#gunning_fog).
+/// Count words with three or more syllables in `text`. SMOG and
+/// [`readability.gunning_fog`](./readability.html#gunning_fog) both use
+/// this count with **no** exclusions.
 pub fn polysyllables(text: String) -> Int {
   word_chunks(string.to_graphemes(text), [], [])
   |> list.fold(0, fn(acc, w) {

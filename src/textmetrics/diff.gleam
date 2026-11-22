@@ -197,9 +197,9 @@ pub fn context_lines(options: UnifiedOptions) -> Int {
 /// Optimal edit script transforming `old` into `new`, computed by the
 /// Myers (1986) O(ND) algorithm.
 ///
-/// The script's `cost` (Insert + Delete) equals `levenshtein_list`
-/// of `old` vs `new` with substitution counted as one insert plus
-/// one delete. Tie-breaking prefers earlier deletions over insertions,
+/// The script's `cost` (Insert + Delete) equals the indel distance
+/// `list.length(old) + list.length(new) - 2 * lcs.length(old, new)`.
+/// Tie-breaking prefers earlier deletions over insertions,
 /// matching GNU `diff(1)`.
 pub fn myers(old: List(a), new: List(a)) -> EditScript(a) {
   // The forward search always matches the common prefix first, so it

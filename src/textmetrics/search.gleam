@@ -1,6 +1,6 @@
 //// Convenience helpers for spell-correction-style search built on
-//// [`distance`](textmetrics/distance.html) and
-//// [`similarity`](textmetrics/similarity.html).
+//// [`distance`](./distance.html) and
+//// [`similarity`](./similarity.html).
 ////
 //// Both functions are deterministic: ties are broken by the
 //// candidates' original input order.
