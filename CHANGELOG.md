@@ -7,6 +7,8 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-22
+
 ### Changed
 
 - Jaro-Winkler scores change: `similarity.jaro_winkler`, `jaro_winkler_with` and `search.rank_jaro_winkler` add the prefix bonus only when the Jaro similarity is above 0.7, as in Winkler's definition and in rapidfuzz and jellyfish. `jaro_winkler("abcxyz", "abcdef")` is now 0.6667 instead of 0.7667, so fixed thresholds may match different pairs.
