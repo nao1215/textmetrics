@@ -4,7 +4,8 @@
 ////
 //// Functions in this module are pure, deterministic, and `O(n)` in
 //// the length of their input. They iterate over **extended grapheme
-//// clusters** (via `gleam/string.to_graphemes`), not raw bytes, so
+//// clusters** (via `gleam/string.to_graphemes`) of the input
+//// normalised to Unicode Normalization Form C (NFC), not raw bytes, so
 //// `"naïve"` is 5 graphemes and 1 word regardless of whether the
 //// diacritic is encoded as a single codepoint or `a` + combining
 //// mark.
@@ -18,17 +19,19 @@
 import gleam/int
 import gleam/list
 import gleam/string
+import textmetrics/internal/unicode
+import textmetrics/internal/unicode_category
 
 // --- words --------------------------------------------------------------
 
 /// Count words. A word is a maximal run of "letter-like" graphemes
 /// separated by whitespace or punctuation.
 ///
-/// A grapheme counts as letter-like when its first code point is an
-/// ASCII letter (`a-z` / `A-Z`), an ASCII digit, or a non-ASCII
-/// letter, digit or mark (Latin-1 letters, CJK ideographs, accented
-/// letters delivered as a single grapheme, etc.). Whitespace,
-/// punctuation, symbols and emoji are word boundaries.
+/// A grapheme counts as letter-like when its first code point is a
+/// letter, mark, decimal digit or letter number of any script
+/// (General_Category L, M, Nd or Nl). Whitespace, punctuation, symbols,
+/// other numbers (`①`, `²`) and emoji, including keycaps such as
+/// `1️⃣`, are word boundaries.
 ///
 /// Examples:
 ///
@@ -40,7 +43,7 @@ import gleam/string
 /// count.words("hello   world") // 2 (whitespace collapses)
 /// ```
 pub fn words(text: String) -> Int {
-  let graphemes = string.to_graphemes(text)
+  let graphemes = nfc_graphemes(text)
   count_runs(graphemes, False, 0)
 }
 
@@ -63,9 +66,9 @@ fn count_runs(items: List(String), in_run: Bool, acc: Int) -> Int {
 fn is_letter_like(g: String) -> Bool {
   case string.to_utf_codepoints(g) {
     [] -> False
-    [cp, ..] -> {
-      let n = string.utf_codepoint_to_int(cp)
-      is_letter_like_code(n)
+    [first, ..rest] -> {
+      let code = string.utf_codepoint_to_int(first)
+      is_letter_like_code(code) && !is_emoji_sequence(code, rest)
     }
   }
 }
@@ -78,47 +81,28 @@ fn is_letter_like_code(n: Int) -> Bool {
     // ASCII digits
     _ if n >= 0x30 && n <= 0x39 -> True
     _ if n < 0x80 -> False
-    // Above ASCII: letters, digits and marks of any script, but not
-    // punctuation, symbols, spaces or emoji.
-    _ -> !is_non_letter_code(n)
+    _ -> !unicode_category.is_non_letter(n)
   }
 }
 
-// Punctuation, symbol, space and control code points above U+007F, by
-// block: Latin-1, General Punctuation, currency, arrows to control
-// pictures, box drawing to miscellaneous symbols and arrows,
-// Supplemental Punctuation, CJK punctuation, vertical and small forms,
-// full-width ASCII punctuation, specials and the emoji and symbol blocks.
-fn is_non_letter_code(n: Int) -> Bool {
-  case n {
-    _ if n >= 0x80 && n <= 0xa9 -> True
-    _ if n >= 0xab && n <= 0xb1 -> True
-    0xb4 | 0xbb | 0xbf | 0xd7 | 0xf7 | 0x1680 | 0x3030 | 0xfeff -> True
-    _ if n >= 0xb6 && n <= 0xb8 -> True
-    _ if n >= 0x2000 && n <= 0x206f -> True
-    _ if n >= 0x20a0 && n <= 0x20cf -> True
-    _ if n >= 0x2190 && n <= 0x245f -> True
-    _ if n >= 0x2500 && n <= 0x2bff -> True
-    _ if n >= 0x2e00 && n <= 0x2e7f -> True
-    _ if n >= 0x3000 && n <= 0x3004 -> True
-    _ if n >= 0x3008 && n <= 0x3020 -> True
-    _ if n >= 0x3036 && n <= 0x3037 -> True
-    _ if n >= 0x303d && n <= 0x303f -> True
-    _ if n >= 0xfe10 && n <= 0xfe1f -> True
-    _ if n >= 0xfe30 && n <= 0xfe6f -> True
-    _ if n >= 0xff00 && n <= 0xff0f -> True
-    _ if n >= 0xff1a && n <= 0xff20 -> True
-    _ if n >= 0xff3b && n <= 0xff40 -> True
-    _ if n >= 0xff5b && n <= 0xff65 -> True
-    _ if n >= 0xfff0 && n <= 0xffff -> True
-    _ if n >= 0x1f000 && n <= 0x1faff -> True
-    _ -> False
-  }
+// A keycap (`1️⃣`, U+20E3) or an ASCII character in emoji presentation
+// (`9` + U+FE0F) is an emoji, not a digit.
+fn is_emoji_sequence(first: Int, rest: List(UtfCodepoint)) -> Bool {
+  list.any(rest, fn(codepoint) {
+    let code = string.utf_codepoint_to_int(codepoint)
+    code == 0x20e3 || { first < 0x80 && code == 0xfe0f }
+  })
+}
+
+fn nfc_graphemes(text: String) -> List(String) {
+  string.to_graphemes(unicode.to_nfc(text))
 }
 
 // --- sentences -----------------------------------------------------------
 
-/// Count sentences. Sentence terminators are `.`, `!`, `?`. A run of
+/// Count sentences. Sentence terminators are `.`, `!`, `?`, `…`, the
+/// ideographic and full-width `。` `．` `！` `？`, and the Devanagari
+/// dandas `।` `॥`. A run of
 /// consecutive terminators counts as one boundary (so `"What?!"` is
 /// one sentence). A trailing non-empty fragment that lacks a
 /// terminator still counts as a sentence (`"hello"` → 1).
@@ -139,7 +123,7 @@ fn is_non_letter_code(n: Int) -> Bool {
 ///
 /// Empty input returns `0`.
 pub fn sentences(text: String) -> Int {
-  let graphemes = string.to_graphemes(text)
+  let graphemes = nfc_graphemes(text)
   case has_non_whitespace(graphemes) {
     False -> 0
     True -> sentence_loop(graphemes, False, False, empty_word, 0)
@@ -209,7 +193,7 @@ fn sentence_loop(
 
 fn is_terminator(g: String) -> Bool {
   case g {
-    "." | "!" | "?" -> True
+    "." | "!" | "?" | "…" | "。" | "．" | "！" | "？" | "।" | "॥" -> True
     _ -> False
   }
 }
@@ -384,6 +368,10 @@ fn has_non_whitespace(items: List(String)) -> Bool {
 /// Returns `0` for an empty input. Returns `1` for any other input with
 /// none of the letters kept in step 2 (`"123"`, `"日本"`).
 pub fn syllables_in_word(word: String) -> Int {
+  word_syllables(unicode.to_nfc(word))
+}
+
+fn word_syllables(word: String) -> Int {
   let lowered = string.lowercase(word)
   let letters =
     lowered
@@ -497,8 +485,8 @@ fn last_three(items: List(String)) -> List(String) {
 /// Count syllables in `text`. Sums [`syllables_in_word`](#syllables_in_word)
 /// over each word found by [`words`](#words).
 pub fn syllables(text: String) -> Int {
-  word_chunks(string.to_graphemes(text), [], [])
-  |> list.fold(0, fn(acc, w) { acc + syllables_in_word(w) })
+  word_chunks(nfc_graphemes(text), [], [])
+  |> list.fold(0, fn(acc, w) { acc + word_syllables(w) })
 }
 
 fn word_chunks(
@@ -535,8 +523,8 @@ fn finish(chunk: List(String)) -> String {
 
 /// Count characters that contribute to readability formulas: ASCII
 /// letters plus ASCII digits, **excluding** whitespace, punctuation,
-/// symbols and emoji. Non-ASCII letters (Latin-1 accents, CJK
-/// ideographs) also count.
+/// symbols, other numbers and emoji. Letters, marks and digits of other
+/// scripts (Latin-1 accents, CJK ideographs) also count.
 ///
 /// Examples:
 ///
@@ -546,7 +534,7 @@ fn finish(chunk: List(String)) -> String {
 /// ```
 pub fn characters(text: String) -> Int {
   text
-  |> string.to_graphemes
+  |> nfc_graphemes
   |> list.fold(0, fn(acc, g) {
     case is_letter_like(g) {
       True -> acc + 1
@@ -559,9 +547,9 @@ pub fn characters(text: String) -> Int {
 /// [`readability.gunning_fog`](./readability.html#gunning_fog) both use
 /// this count with **no** exclusions.
 pub fn polysyllables(text: String) -> Int {
-  word_chunks(string.to_graphemes(text), [], [])
+  word_chunks(nfc_graphemes(text), [], [])
   |> list.fold(0, fn(acc, w) {
-    case syllables_in_word(w) >= 3 {
+    case word_syllables(w) >= 3 {
       True -> acc + 1
       False -> acc
     }

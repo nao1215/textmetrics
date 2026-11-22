@@ -11,7 +11,7 @@
 /// Both runtimes ship NFC tables, so callers do not need an extra
 /// dependency.
 ///
-/// The string functions of `distance` and `similarity` call this on
+/// The string functions of `distance`, `similarity` and `count` call this on
 /// their inputs so that canonically-equivalent strings (`"\u{00C1}"`
 /// vs `"A\u{0301}"`) compare as equal.
 @external(erlang, "textmetrics_ffi", "to_nfc")
