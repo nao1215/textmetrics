@@ -50,23 +50,15 @@ pub fn did_you_mean(
   max_distance: Int,
 ) -> List(String) {
   candidates
-  |> list.index_map(fn(c, i) { #(c, distance.levenshtein(query, c), i) })
-  |> list.filter(fn(t) {
-    let #(_, d, _) = t
-    d <= max_distance
+  |> list.index_map(fn(candidate, index) {
+    #(candidate, distance.levenshtein(query, candidate), index)
   })
-  |> list.sort(by: fn(a, b) {
-    let #(_, da, ia) = a
-    let #(_, db, ib) = b
-    case int.compare(da, db) {
-      order.Eq -> int.compare(ia, ib)
-      o -> o
-    }
+  |> list.filter(fn(scored) { scored.1 <= max_distance })
+  |> list.sort(by: fn(left, right) {
+    int.compare(left.1, right.1)
+    |> order.break_tie(int.compare(left.2, right.2))
   })
-  |> list.map(fn(t) {
-    let #(c, _, _) = t
-    c
-  })
+  |> list.map(fn(scored) { scored.0 })
 }
 
 /// Single closest candidate within `max_distance` Levenshtein
@@ -113,18 +105,13 @@ pub fn rank_jaro_winkler(
   top_n: Int,
 ) -> List(Ranked) {
   candidates
-  |> list.index_map(fn(c, i) { #(c, similarity.jaro_winkler(query, c), i) })
-  |> list.sort(by: fn(a, b) {
-    let #(_, sa, ia) = a
-    let #(_, sb, ib) = b
-    case float.compare(sb, sa) {
-      order.Eq -> int.compare(ia, ib)
-      o -> o
-    }
+  |> list.index_map(fn(candidate, index) {
+    #(candidate, similarity.jaro_winkler(query, candidate), index)
+  })
+  |> list.sort(by: fn(left, right) {
+    float.compare(right.1, left.1)
+    |> order.break_tie(int.compare(left.2, right.2))
   })
   |> list.take(top_n)
-  |> list.map(fn(t) {
-    let #(c, s, _) = t
-    Ranked(label: c, score: s)
-  })
+  |> list.map(fn(scored) { Ranked(label: scored.0, score: scored.1) })
 }

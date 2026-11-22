@@ -124,7 +124,7 @@ fn take_while_equal(
 ) -> #(List(a), EditScript(a)) {
   case script {
     [Equal(item), ..rest] -> take_while_equal(rest, [item, ..acc])
-    _ -> #(list.reverse(acc), script)
+    [Insert(_), ..] | [Delete(_), ..] | [] -> #(list.reverse(acc), script)
   }
 }
 
@@ -134,7 +134,7 @@ fn take_while_insert(
 ) -> #(List(a), EditScript(a)) {
   case script {
     [Insert(item), ..rest] -> take_while_insert(rest, [item, ..acc])
-    _ -> #(list.reverse(acc), script)
+    [Equal(_), ..] | [Delete(_), ..] | [] -> #(list.reverse(acc), script)
   }
 }
 
@@ -144,6 +144,6 @@ fn take_while_delete(
 ) -> #(List(a), EditScript(a)) {
   case script {
     [Delete(item), ..rest] -> take_while_delete(rest, [item, ..acc])
-    _ -> #(list.reverse(acc), script)
+    [Equal(_), ..] | [Insert(_), ..] | [] -> #(list.reverse(acc), script)
   }
 }

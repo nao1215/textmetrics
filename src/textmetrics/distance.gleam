@@ -39,10 +39,7 @@ pub type HammingError {
 ///
 /// Time `O(m·n)`, space `O(min(m, n))`.
 pub fn levenshtein(a: String, b: String) -> Int {
-  levenshtein_list(
-    string.to_graphemes(unicode.to_nfc(a)),
-    string.to_graphemes(unicode.to_nfc(b)),
-  )
+  levenshtein_list(nfc_graphemes(a), nfc_graphemes(b))
 }
 
 /// Levenshtein-based similarity in `[0.0, 1.0]`.
@@ -63,19 +60,13 @@ pub fn levenshtein(a: String, b: String) -> Int {
 /// preferred over Jaro / Jaro-Winkler. Time `O(m·n)`, space
 /// `O(min(m, n))` — same as [`levenshtein`](#levenshtein).
 pub fn normalized_levenshtein(a: String, b: String) -> Float {
-  let ga = string.to_graphemes(unicode.to_nfc(a))
-  let gb = string.to_graphemes(unicode.to_nfc(b))
-  let la = list.length(ga)
-  let lb = list.length(gb)
-  let max_len = case la >= lb {
-    True -> la
-    False -> lb
-  }
-  case max_len {
+  let a_graphemes = nfc_graphemes(a)
+  let b_graphemes = nfc_graphemes(b)
+  case int.max(list.length(a_graphemes), list.length(b_graphemes)) {
     0 -> 1.0
-    _ -> {
-      let d = levenshtein_list(ga, gb)
-      1.0 -. int.to_float(d) /. int.to_float(max_len)
+    longest -> {
+      let distance = levenshtein_list(a_graphemes, b_graphemes)
+      1.0 -. int.to_float(distance) /. int.to_float(longest)
     }
   }
 }
@@ -149,25 +140,22 @@ fn levenshtein_inner(
 /// Time `O(m·n)`, space `O(k·n)` for `k` distinct graphemes in `a`
 /// and `n = length(b)`.
 pub fn damerau_levenshtein(a: String, b: String) -> Int {
-  damerau_levenshtein_graphemes(
-    string.to_graphemes(unicode.to_nfc(a)),
-    string.to_graphemes(unicode.to_nfc(b)),
-  )
+  damerau_levenshtein_graphemes(nfc_graphemes(a), nfc_graphemes(b))
 }
 
 // Lowrance-Wagner. Row `i` of the table needs, besides row `i - 1`, the
 // row before the last occurrence of `b[j]` in `a`; only those rows are
 // kept, one per distinct grapheme of `a`, indexed for random access.
-fn damerau_levenshtein_graphemes(ga: List(String), gb: List(String)) -> Int {
-  case ga, gb {
-    [], _ -> list.length(gb)
-    _, [] -> list.length(ga)
+fn damerau_levenshtein_graphemes(a: List(String), b: List(String)) -> Int {
+  case a, b {
+    [], _ -> list.length(b)
+    _, [] -> list.length(a)
     _, _ ->
       damerau_levenshtein_rows(
-        ga,
-        gb,
+        a,
+        b,
         1,
-        int_range_inclusive(0, list.length(gb)),
+        int_range_inclusive(0, list.length(b)),
         dict.new(),
       )
   }
@@ -278,21 +266,18 @@ fn damerau_levenshtein_row(
 ///
 /// Time `O(m·n)`, space `O(min(m, n))` (three rows).
 pub fn osa(a: String, b: String) -> Int {
-  osa_graphemes(
-    string.to_graphemes(unicode.to_nfc(a)),
-    string.to_graphemes(unicode.to_nfc(b)),
-  )
+  osa_graphemes(nfc_graphemes(a), nfc_graphemes(b))
 }
 
-fn osa_graphemes(ga: List(String), gb: List(String)) -> Int {
-  let m = list.length(ga)
-  let n = list.length(gb)
+fn osa_graphemes(a: List(String), b: List(String)) -> Int {
+  let m = list.length(a)
+  let n = list.length(b)
   case m, n {
     0, _ -> n
     _, 0 -> m
     // OSA is symmetric; the shorter list sets the row length.
-    _, _ if m < n -> osa_rows(gb, ga, Error(Nil), int_range_inclusive(0, m), [])
-    _, _ -> osa_rows(ga, gb, Error(Nil), int_range_inclusive(0, n), [])
+    _, _ if m < n -> osa_rows(b, a, Error(Nil), int_range_inclusive(0, m), [])
+    _, _ -> osa_rows(a, b, Error(Nil), int_range_inclusive(0, n), [])
   }
 }
 
@@ -392,13 +377,13 @@ fn osa_row(
 ///
 /// Time `O(n)`, space `O(1)`.
 pub fn hamming(a: String, b: String) -> Result(Int, HammingError) {
-  let ga = string.to_graphemes(unicode.to_nfc(a))
-  let gb = string.to_graphemes(unicode.to_nfc(b))
-  let la = list.length(ga)
-  let lb = list.length(gb)
-  case la == lb {
-    False -> Error(LengthMismatch(la, lb))
-    True -> Ok(count_diffs(ga, gb, 0))
+  let a_graphemes = nfc_graphemes(a)
+  let b_graphemes = nfc_graphemes(b)
+  let a_length = list.length(a_graphemes)
+  let b_length = list.length(b_graphemes)
+  case a_length == b_length {
+    False -> Error(LengthMismatch(a_length, b_length))
+    True -> Ok(count_diffs(a_graphemes, b_graphemes, 0))
   }
 }
 
@@ -417,6 +402,10 @@ fn count_diffs(a: List(String), b: List(String), acc: Int) -> Int {
 // ---------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------
+
+fn nfc_graphemes(text: String) -> List(String) {
+  string.to_graphemes(unicode.to_nfc(text))
+}
 
 fn last_or_zero(row: List(Int)) -> Int {
   result.unwrap(list.last(row), 0)

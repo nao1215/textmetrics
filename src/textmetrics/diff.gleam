@@ -72,23 +72,18 @@ pub fn unified_options_checked(
 ) -> Result(UnifiedOptions, UnifiedOptionsError) {
   use _ <- result.try(validate_name(OldName, old_name))
   use _ <- result.try(validate_name(NewName, new_name))
-  Ok(UnifiedOptions(old_name: old_name, new_name: new_name, context_lines: 3))
+  Ok(UnifiedOptions(old_name:, new_name:, context_lines: 3))
 }
 
 /// Override the context-line count. Returns
-/// `Error(ContextLinesNegative(n))` when `n < 0`.
+/// `Error(ContextLinesNegative(lines))` when `lines < 0`.
 pub fn with_context_lines(
   options: UnifiedOptions,
-  n: Int,
+  lines: Int,
 ) -> Result(UnifiedOptions, UnifiedOptionsError) {
-  case n < 0 {
-    True -> Error(ContextLinesNegative(n))
-    False ->
-      Ok(UnifiedOptions(
-        old_name: options.old_name,
-        new_name: options.new_name,
-        context_lines: n,
-      ))
+  case lines < 0 {
+    True -> Error(ContextLinesNegative(lines))
+    False -> Ok(UnifiedOptions(..options, context_lines: lines))
   }
 }
 
@@ -96,11 +91,7 @@ pub fn with_context_lines(
 /// `\u{0000}` / `\t` — see [`with_old_name_checked`](#with_old_name_checked)
 /// for the strict variant.
 pub fn with_old_name(options: UnifiedOptions, name: String) -> UnifiedOptions {
-  UnifiedOptions(
-    old_name: sanitize_name(name),
-    new_name: options.new_name,
-    context_lines: options.context_lines,
-  )
+  UnifiedOptions(..options, old_name: sanitize_name(name))
 }
 
 /// Strict counterpart of [`with_old_name`](#with_old_name). Returns
@@ -111,22 +102,14 @@ pub fn with_old_name_checked(
   name: String,
 ) -> Result(UnifiedOptions, UnifiedOptionsError) {
   use _ <- result.try(validate_name(OldName, name))
-  Ok(UnifiedOptions(
-    old_name: name,
-    new_name: options.new_name,
-    context_lines: options.context_lines,
-  ))
+  Ok(UnifiedOptions(..options, old_name: name))
 }
 
 /// Override the new-file label. Silently strips `\n` / `\r` /
 /// `\u{0000}` / `\t` — see [`with_new_name_checked`](#with_new_name_checked)
 /// for the strict variant.
 pub fn with_new_name(options: UnifiedOptions, name: String) -> UnifiedOptions {
-  UnifiedOptions(
-    old_name: options.old_name,
-    new_name: sanitize_name(name),
-    context_lines: options.context_lines,
-  )
+  UnifiedOptions(..options, new_name: sanitize_name(name))
 }
 
 /// Strict counterpart of [`with_new_name`](#with_new_name). Returns
@@ -137,11 +120,7 @@ pub fn with_new_name_checked(
   name: String,
 ) -> Result(UnifiedOptions, UnifiedOptionsError) {
   use _ <- result.try(validate_name(NewName, name))
-  Ok(UnifiedOptions(
-    old_name: options.old_name,
-    new_name: name,
-    context_lines: options.context_lines,
-  ))
+  Ok(UnifiedOptions(..options, new_name: name))
 }
 
 // The unified-diff header — `--- <old_name>\n+++ <new_name>\n` — is
@@ -645,7 +624,7 @@ fn has_changes(script: EditScript(String)) -> Bool {
   case script {
     [] -> False
     [Equal(_), ..rest] -> has_changes(rest)
-    _ -> True
+    [Insert(_), ..] | [Delete(_), ..] -> True
   }
 }
 
@@ -685,42 +664,23 @@ fn build_hunks(
   events: List(LineEvent),
   context_lines: Int,
 ) -> List(List(LineEvent)) {
-  let events_arr = list_to_dict(events)
-  let n = list.length(events)
-  let change_indices = find_change_indices(events_arr, n, 0, []) |> list.reverse
-  case change_indices {
-    [] -> []
-    _ -> {
-      let ranges =
-        list.map(change_indices, fn(i) {
-          #(int.max(0, i - context_lines), int.min(n - 1, i + context_lines))
-        })
-      let merged = merge_ranges(ranges)
-      list.map(merged, fn(range) {
-        let #(lo, hi) = range
-        slice_events(events_arr, lo, hi + 1, [])
-      })
-    }
-  }
-}
-
-fn find_change_indices(
-  events_arr: Dict(Int, LineEvent),
-  n: Int,
-  i: Int,
-  acc: List(Int),
-) -> List(Int) {
-  case i >= n {
-    True -> acc
-    False -> {
-      let new_acc = case dict.get(events_arr, i) {
-        Ok(InsertEvent(_, _, _)) -> [i, ..acc]
-        Ok(DeleteEvent(_, _, _)) -> [i, ..acc]
-        _ -> acc
+  let last_index = list.length(events) - 1
+  let change_indices =
+    list.index_fold(events, [], fn(indices, event, index) {
+      case event {
+        InsertEvent(..) | DeleteEvent(..) -> [index, ..indices]
+        ContextEvent(..) -> indices
       }
-      find_change_indices(events_arr, n, i + 1, new_acc)
-    }
-  }
+    })
+    |> list.reverse
+  let ranges =
+    list.map(change_indices, fn(index) {
+      #(
+        int.max(0, index - context_lines),
+        int.min(last_index, index + context_lines),
+      )
+    })
+  slice_ranges(events, 0, merge_ranges(ranges), [], [])
 }
 
 fn merge_ranges(ranges: List(#(Int, Int))) -> List(#(Int, Int)) {
@@ -738,112 +698,98 @@ fn merge_ranges_loop(
   case remaining {
     [] -> list.reverse([current, ..acc])
     [#(lo, hi), ..rest] -> {
-      let #(c_lo, c_hi) = current
-      case lo <= c_hi + 1 {
-        True -> merge_ranges_loop(rest, #(c_lo, int.max(c_hi, hi)), acc)
+      let #(current_low, current_high) = current
+      case lo <= current_high + 1 {
+        True ->
+          merge_ranges_loop(
+            rest,
+            #(current_low, int.max(current_high, hi)),
+            acc,
+          )
         False -> merge_ranges_loop(rest, #(lo, hi), [current, ..acc])
       }
     }
   }
 }
 
-fn slice_events(
-  events_arr: Dict(Int, LineEvent),
-  i: Int,
-  end: Int,
-  acc: List(LineEvent),
-) -> List(LineEvent) {
-  case i >= end {
-    True -> list.reverse(acc)
-    False ->
-      case dict.get(events_arr, i) {
-        Ok(e) -> slice_events(events_arr, i + 1, end, [e, ..acc])
-        Error(_) -> list.reverse(acc)
+// Cuts the events at the given ranges, which are sorted and disjoint.
+fn slice_ranges(
+  events: List(LineEvent),
+  index: Int,
+  ranges: List(#(Int, Int)),
+  current: List(LineEvent),
+  hunks: List(List(LineEvent)),
+) -> List(List(LineEvent)) {
+  case ranges, events {
+    [#(low, high), ..later_ranges], [event, ..later_events] ->
+      case index < low, index == high {
+        True, _ -> slice_ranges(later_events, index + 1, ranges, current, hunks)
+        False, True ->
+          slice_ranges(later_events, index + 1, later_ranges, [], [
+            list.reverse([event, ..current]),
+            ..hunks
+          ])
+        False, False ->
+          slice_ranges(
+            later_events,
+            index + 1,
+            ranges,
+            [event, ..current],
+            hunks,
+          )
       }
+    [], _ | [_, ..], [] -> list.reverse(hunks)
   }
 }
 
 fn emit_hunk(events: List(LineEvent)) -> String {
-  let #(os, oc, ns, nc) = compute_hunk_meta(events)
+  let #(first_old, first_new) = case events {
+    [first, ..] -> #(first.old_pos, first.new_pos)
+    [] -> #(1, 1)
+  }
+  let old_lines =
+    list.filter_map(events, fn(event) {
+      case event {
+        ContextEvent(old_pos:, ..) | DeleteEvent(old_pos:, ..) -> Ok(old_pos)
+        InsertEvent(..) -> Error(Nil)
+      }
+    })
+  let new_lines =
+    list.filter_map(events, fn(event) {
+      case event {
+        ContextEvent(new_pos:, ..) | InsertEvent(new_pos:, ..) -> Ok(new_pos)
+        DeleteEvent(..) -> Error(Nil)
+      }
+    })
   let header =
-    "@@ -" <> format_range(os, oc) <> " +" <> format_range(ns, nc) <> " @@\n"
+    "@@ -"
+    <> format_range(hunk_side(old_lines, first_old))
+    <> " +"
+    <> format_range(hunk_side(new_lines, first_new))
+    <> " @@\n"
   let body = list.map(events, event_to_line) |> string.concat
   header <> body
 }
 
-fn format_range(start: Int, count: Int) -> String {
+// Start and line count of one side of a hunk. A side with no lines
+// starts at the line before the hunk, as in `diff -u` (`-0,0`).
+fn hunk_side(positions: List(Int), first_position: Int) -> #(Int, Int) {
+  case positions {
+    [start, ..] -> #(start, list.length(positions))
+    [] -> #(int.max(0, first_position - 1), 0)
+  }
+}
+
+fn format_range(side: #(Int, Int)) -> String {
+  let #(start, count) = side
   case count {
     1 -> int.to_string(start)
     _ -> int.to_string(start) <> "," <> int.to_string(count)
   }
 }
 
-fn compute_hunk_meta(events: List(LineEvent)) -> #(Int, Int, Int, Int) {
-  let #(os, oc) = old_start_count(events)
-  let #(ns, nc) = new_start_count(events)
-  #(os, oc, ns, nc)
-}
-
-fn old_start_count(events: List(LineEvent)) -> #(Int, Int) {
-  let folded =
-    list.fold(events, #(-1, 0), fn(acc, e) {
-      let #(start, count) = acc
-      case e {
-        ContextEvent(_, op, _) ->
-          case start {
-            -1 -> #(op, count + 1)
-            _ -> #(start, count + 1)
-          }
-        DeleteEvent(_, op, _) ->
-          case start {
-            -1 -> #(op, count + 1)
-            _ -> #(start, count + 1)
-          }
-        InsertEvent(_, _, _) -> acc
-      }
-    })
-  let #(s, c) = folded
-  case s {
-    -1 ->
-      case events {
-        [InsertEvent(_, op, _), ..] -> #(int.max(0, op - 1), 0)
-        _ -> #(0, 0)
-      }
-    _ -> #(s, c)
-  }
-}
-
-fn new_start_count(events: List(LineEvent)) -> #(Int, Int) {
-  let folded =
-    list.fold(events, #(-1, 0), fn(acc, e) {
-      let #(start, count) = acc
-      case e {
-        ContextEvent(_, _, np) ->
-          case start {
-            -1 -> #(np, count + 1)
-            _ -> #(start, count + 1)
-          }
-        InsertEvent(_, _, np) ->
-          case start {
-            -1 -> #(np, count + 1)
-            _ -> #(start, count + 1)
-          }
-        DeleteEvent(_, _, _) -> acc
-      }
-    })
-  let #(s, c) = folded
-  case s {
-    -1 ->
-      case events {
-        [DeleteEvent(_, _, np), ..] -> #(int.max(0, np - 1), 0)
-        _ -> #(0, 0)
-      }
-    _ -> #(s, c)
-  }
-}
-
-fn event_to_line(e: LineEvent) -> String {
-  case e {
+fn event_to_line(event: LineEvent) -> String {
+  case event {
     ContextEvent(line, _, _) -> " " <> line <> "\n"
     DeleteEvent(line, _, _) -> "-" <> line <> "\n"
     InsertEvent(line, _, _) -> "+" <> line <> "\n"
