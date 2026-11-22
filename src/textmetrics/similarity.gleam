@@ -5,8 +5,8 @@
 //// `Float`.
 ////
 //// All string-typed functions operate on extended grapheme clusters
-//// and do not normalize their inputs — callers wanting NFC
-//// equivalence must normalize first.
+//// after normalising their inputs to Unicode Normalization Form C
+//// (NFC), so `"\u{00C1}"` and `"A\u{0301}"` score as identical.
 
 import gleam/dict.{type Dict}
 import gleam/int
@@ -14,6 +14,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
+import textmetrics/internal/unicode
 
 /// Returned by [`sorensen_dice`](#sorensen_dice) when given an n-gram
 /// size below `1`.
@@ -87,7 +88,7 @@ pub fn prefix_max(config: JaroWinklerConfig) -> Int {
 ///
 /// Time `O(m·n)`, space `O(m + n)`.
 pub fn jaro(a: String, b: String) -> Float {
-  jaro_graphemes(string.to_graphemes(a), string.to_graphemes(b))
+  jaro_graphemes(nfc_graphemes(a), nfc_graphemes(b))
 }
 
 /// Jaro-Winkler similarity using Winkler-1990 defaults
@@ -105,8 +106,8 @@ pub fn jaro_winkler_with(
   b: String,
   config: JaroWinklerConfig,
 ) -> Float {
-  let a_graphemes = string.to_graphemes(a)
-  let b_graphemes = string.to_graphemes(b)
+  let a_graphemes = nfc_graphemes(a)
+  let b_graphemes = nfc_graphemes(b)
   let jaro_score = jaro_graphemes(a_graphemes, b_graphemes)
   case jaro_score >. boost_threshold {
     False -> jaro_score
@@ -173,15 +174,15 @@ pub fn sorensen_dice(
   case n < 1 {
     True -> Error(NgramSizeInvalid(n))
     False -> {
-      let ga = string.to_graphemes(a)
-      let gb = string.to_graphemes(b)
-      let ngs_a = build_ngrams(ga, n)
-      let ngs_b = build_ngrams(gb, n)
+      let a_graphemes = nfc_graphemes(a)
+      let b_graphemes = nfc_graphemes(b)
+      let ngs_a = build_ngrams(a_graphemes, n)
+      let ngs_b = build_ngrams(b_graphemes, n)
       let total_a = list.length(ngs_a)
       let total_b = list.length(ngs_b)
       case total_a + total_b {
         0 ->
-          case a == b {
+          case a_graphemes == b_graphemes {
             True -> Ok(1.0)
             False -> Ok(0.0)
           }
@@ -457,6 +458,10 @@ fn intersection_size(a: Dict(String, Int), b: Dict(String, Int)) -> Int {
 // ---------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------
+
+fn nfc_graphemes(text: String) -> List(String) {
+  string.to_graphemes(unicode.to_nfc(text))
+}
 
 fn list_to_dict(items: List(t)) -> Dict(Int, t) {
   list_to_dict_loop(items, 0, dict.new())
