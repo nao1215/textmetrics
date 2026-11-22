@@ -141,7 +141,7 @@ def generate(unicode_data, output, check=False):
     try:
         with tempfile.NamedTemporaryFile(
             mode="w", encoding="utf-8", newline="\n", suffix=".gleam",
-            prefix=f".{output.name}.", dir=output.parent, delete=False,
+            prefix=f".{output.name}.", dir=None if check else output.parent, delete=False,
         ) as handle:
             temporary = Path(handle.name)
             handle.write(source)

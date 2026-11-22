@@ -151,7 +151,7 @@ pub fn sorensen_dice_rejects_negative_n_test() {
   |> should.equal(Error(Nil))
 }
 
-// --- sorensen_dice_bigrams / sorensen_dice_trigrams (lenient #6) ---
+// --- Sørensen-Dice n-gram fixtures ---
 
 pub fn sorensen_dice_bigrams_identical_test() {
   { textmetrics.sorensen_dice("abc", "abc", ngram_size: 2) |> should.be_ok }
@@ -169,8 +169,7 @@ pub fn sorensen_dice_bigrams_disjoint_test() {
 }
 
 pub fn sorensen_dice_bigrams_night_nacht_test() {
-  // Same fixture as sorensen_dice_night_nacht_test — the lenient
-  // alias must match the strict variant exactly when n = 2.
+  // One shared bigram out of four on each side.
   approx_equal(
     {
       textmetrics.sorensen_dice("night", "nacht", ngram_size: 2) |> should.be_ok
@@ -180,14 +179,10 @@ pub fn sorensen_dice_bigrams_night_nacht_test() {
   |> should.be_true
 }
 
-pub fn sorensen_dice_bigrams_matches_strict_test() {
-  let assert Ok(strict) =
-    textmetrics.sorensen_dice("context", "contact", ngram_size: 2)
-  {
-    textmetrics.sorensen_dice("context", "contact", ngram_size: 2)
-    |> should.be_ok
-  }
-  |> should.equal(strict)
+pub fn sorensen_dice_context_contact_bigrams_test() {
+  // co, on, nt are shared; each side has six bigrams.
+  textmetrics.sorensen_dice("context", "contact", ngram_size: 2)
+  |> should.equal(Ok(0.5))
 }
 
 pub fn sorensen_dice_trigrams_identical_test() {
@@ -195,20 +190,14 @@ pub fn sorensen_dice_trigrams_identical_test() {
   |> should.equal(1.0)
 }
 
-pub fn sorensen_dice_trigrams_matches_strict_test() {
-  let assert Ok(strict) =
-    textmetrics.sorensen_dice("context", "contact", ngram_size: 3)
-  {
-    textmetrics.sorensen_dice("context", "contact", ngram_size: 3)
-    |> should.be_ok
-  }
-  |> should.equal(strict)
+pub fn sorensen_dice_context_contact_trigrams_test() {
+  // con, ont are shared; each side has five trigrams.
+  textmetrics.sorensen_dice("context", "contact", ngram_size: 3)
+  |> should.equal(Ok(0.4))
 }
 
 pub fn sorensen_dice_bigrams_pipes_into_threshold_test() {
-  // The lenient signature exists so callers can pipe directly into
-  // thresholds. Pin the call-site shape with a trivial threshold
-  // helper to make sure the type plumbing stays Float-shaped.
+  // Inspect a valid score after handling the Result.
   let threshold = fn(score: Float, t: Float) { score >=. t }
   { textmetrics.sorensen_dice("hello", "hello", ngram_size: 2) |> should.be_ok }
   |> threshold(0.5)

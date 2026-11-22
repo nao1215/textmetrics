@@ -20,7 +20,7 @@ import textmetrics/internal/unicode_category
 
 /// Count maximal runs of letter-like graphemes.
 ///
-/// After NFC normalization, accept a grapheme when its first code point has Unicode 15.1 category Letter, Mark, Decimal_Number, or Letter_Number. Whitespace, punctuation, symbols, unassigned code points, and other numbers such as `①` separate words. Keycaps and ASCII characters with emoji presentation also separate words. Empty input returns zero.
+/// After NFC normalization, accept a grapheme when its first code point has Unicode 15.1 category Letter, Mark, Decimal_Number, or Letter_Number. Whitespace, punctuation, symbols, unassigned code points, and other numbers such as `①` separate words. An ASCII digit followed within its grapheme by a keycap mark (U+20E3) or emoji presentation selector (U+FE0F) also separates words. Empty input returns zero.
 ///
 /// ## Examples
 ///
@@ -73,12 +73,14 @@ fn is_letter_like_code(n: Int) -> Bool {
   }
 }
 
-// A keycap (`1️⃣`, U+20E3) or an ASCII character in emoji presentation
-// (`9` + U+FE0F) is an emoji, not a digit.
+// Keep the existing digit emoji exclusion without discarding letters or
+// non-ASCII decimal digits that happen to carry the same suffix marks.
 fn is_emoji_sequence(first: Int, rest: List(UtfCodepoint)) -> Bool {
-  list.any(rest, fn(codepoint) {
+  first >= 0x30
+  && first <= 0x39
+  && list.any(rest, fn(codepoint) {
     let code = string.utf_codepoint_to_int(codepoint)
-    code == 0x20e3 || { first < 0x80 && code == 0xfe0f }
+    code == 0x20e3 || code == 0xfe0f
   })
 }
 
@@ -918,7 +920,7 @@ fn min3(a: Int, b: Int, c: Int) -> Int {
   int.min(a, int.min(b, c))
 }
 
-/// Report a prefix scale outside `0.0..0.25` or a negative prefix cap.
+/// Report a non-finite prefix scale, a scale outside `0.0..0.25`, or a negative prefix cap.
 pub type JaroWinklerError {
   PrefixScaleOutOfRange(got: Float)
   PrefixMaxNegative(got: Int)
@@ -933,7 +935,7 @@ pub fn jaro(left: String, right: String) -> Float {
 
 /// Calculate Jaro similarity with a boost for a shared prefix.
 ///
-/// Require `prefix_scale` in `0.0..0.25` and `prefix_max >= 0`. Validate the scale, then the cap, before checking the input strings. Apply the boost only when the Jaro score is greater than `0.7`. Cap the prefix contribution so that scale times prefix length does not exceed one. Conventional parameters are `0.1` and `4`.
+/// Require a finite `prefix_scale` in `0.0..0.25` and `prefix_max >= 0`. Validate the scale, then the cap, before checking the input strings. Apply the boost only when the Jaro score is greater than `0.7`. Cap the prefix contribution so that scale times prefix length does not exceed one. Conventional parameters are `0.1` and `4`.
 ///
 /// Normalize inputs to NFC. Two empty inputs return `Ok(1.0)`; exactly one empty input returns `Ok(0.0)`. A zero scale or zero prefix cap gives the Jaro score. Different strings can score `1.0` when the prefix boost saturates.
 pub fn jaro_winkler(
@@ -942,9 +944,9 @@ pub fn jaro_winkler(
   prefix_scale scale: Float,
   prefix_max maximum: Int,
 ) -> Result(Float, JaroWinklerError) {
-  case scale <. 0.0 || scale >. 0.25 {
-    True -> Error(PrefixScaleOutOfRange(scale))
-    False ->
+  case scale >=. 0.0 && scale <=. 0.25 {
+    False -> Error(PrefixScaleOutOfRange(scale))
+    True ->
       case maximum < 0 {
         True -> Error(PrefixMaxNegative(maximum))
         False ->
@@ -2396,8 +2398,7 @@ pub fn coleman_liau_index(text: String) -> Result(Float, ReadabilityError) {
 }
 
 /// Jaro-Winkler with the prefix boost applied only when the Jaro score
-/// is above 0.7. `prefix_scale` and `prefix_max` come from a validated
-/// `similarity.JaroWinklerConfig`.
+/// is above 0.7. The caller validates `prefix_scale` and `prefix_max`.
 fn jaro_winkler_graphemes(
   left_graphemes: List(String),
   right_graphemes: List(String),

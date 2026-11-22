@@ -78,6 +78,7 @@ class OutputSafetyTests(unittest.TestCase):
         self.digest = hashlib.sha256(self.input.read_bytes()).hexdigest()
 
     def run_cli(self, check=False):
+        self.expected_candidate_parent = Path(tempfile.gettempdir()) if check else self.output.parent
         arguments = ["--unicode-data", str(self.input), "--output", str(self.output)]
         if check:
             arguments.append("--check")
@@ -94,7 +95,7 @@ class OutputSafetyTests(unittest.TestCase):
             return subprocess.CompletedProcess(arguments, 0, "gleam 1.19.2\n", "")
         self.assertEqual(arguments[:2], ["gleam", "format"])
         temporary = Path(arguments[2])
-        self.assertEqual(temporary.parent, self.output.parent)
+        self.assertEqual(temporary.parent, self.expected_candidate_parent)
         self.assertEqual(temporary.suffix, ".gleam")
         self.assertNotIn(b"\r", temporary.read_bytes())
         # Reopening also checks that the writer is closed before formatting.

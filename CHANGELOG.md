@@ -30,6 +30,9 @@ let assert Ok(score) = textmetrics.jaro_winkler(
 
 ### Fixed
 
+- Keep letters and non-ASCII decimal digits in words when they carry U+20E3 or U+FE0F. Only ASCII digits use the additional emoji exclusion; counts and readability now retain these non-emoji graphemes.
+- Reject a NaN Jaro-Winkler prefix scale before checking the prefix cap or input strings on JavaScript, using `PrefixScaleOutOfRange`.
+- Allow Unicode table verification with `--check` in a read-only checkout. Format the check candidate in the system temporary directory; generation still replaces the output atomically from the same directory.
 - Treat unassigned Unicode 15.1 code points, including noncharacters, as word boundaries instead of letters. This corrects word and character counts and can change sentence boundaries, polysyllable counts, and readability results. For example, `a.\u{FDD0}b` now has two sentences, and `banana\u{FDD0}banana` has two polysyllabic words.
 - Preserve fractional half-transpositions in Jaro similarity. Three mismatches in the matched sequences contribute 1.5 transpositions; integer division previously discarded the fraction. Jaro-Winkler scores and candidate ranking inherit the corrected values.
 
