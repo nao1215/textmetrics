@@ -9,6 +9,7 @@ import legacy/v0_9_0
 import metamon
 import metamon/generator.{type Generator}
 import metamon/generator/range
+import textmetrics/count
 import textmetrics/diff
 import textmetrics/distance
 import textmetrics/internal/unicode
@@ -155,4 +156,25 @@ pub fn jaro_matches_v0_9_0_test() {
       similarity.jaro(a, b) == v0_9_0.jaro(nfc_graphemes(a), nfc_graphemes(b))
     },
   )
+}
+
+/// ASCII text built from tokens that exercise the abbreviation rules:
+/// periods inside and after tokens, short dotted parts, capitals and
+/// punctuation that is neither a terminator nor whitespace.
+fn sentence_text_generator() -> Generator(String) {
+  generator.list_of(
+    generator.element_of([
+      "a", "b", "e", "g", "m", "p", "U", "S", "Mr", "mrs", "Dr", "thurs", "etc",
+      "Jan", "x1", "3", ".", ".", ".", "!", "?", " ", " ", ",", "-", "\n",
+      "Then", "ph", "D", "\u{00A0}",
+    ]),
+    range.constant(0, 30),
+  )
+  |> generator.map(string.concat)
+}
+
+pub fn sentences_matches_v0_9_0_test() {
+  metamon.forall_with(config(), sentence_text_generator(), fn(text) {
+    count.sentences(text) == v0_9_0.sentences(text)
+  })
 }

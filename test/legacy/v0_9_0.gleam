@@ -8,6 +8,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
+import gleam/string
 import textmetrics/edit.{type EditScript, Delete, Equal, Insert}
 
 pub fn myers(old: List(a), new: List(a)) -> EditScript(a) {
@@ -916,5 +917,191 @@ fn skip_unmatched_b(b_matched: Dict(Int, Bool), k: Int) -> Int {
   case dict.get(b_matched, k) {
     Ok(True) -> k
     _ -> skip_unmatched_b(b_matched, k + 1)
+  }
+}
+
+// --- count.sentences ---
+
+fn is_letter_like(g: String) -> Bool {
+  case string.to_utf_codepoints(g) {
+    [] -> False
+    [cp, ..] -> {
+      let n = string.utf_codepoint_to_int(cp)
+      is_letter_like_code(n)
+    }
+  }
+}
+
+fn is_letter_like_code(n: Int) -> Bool {
+  case n {
+    // ASCII letters
+    _ if n >= 0x41 && n <= 0x5a -> True
+    _ if n >= 0x61 && n <= 0x7a -> True
+    // ASCII digits
+    _ if n >= 0x30 && n <= 0x39 -> True
+    // Anything above ASCII — Latin-1 letters, CJK, accented graphemes
+    _ if n >= 0x80 -> True
+    _ -> False
+  }
+}
+
+pub fn sentences(text: String) -> Int {
+  let graphemes = string.to_graphemes(text)
+  case has_non_whitespace(graphemes) {
+    False -> 0
+    True -> sentence_loop(graphemes, False, False, [], 0)
+  }
+}
+
+fn sentence_loop(
+  items: List(String),
+  saw_content: Bool,
+  in_terminator: Bool,
+  current_word: List(String),
+  acc: Int,
+) -> Int {
+  case items {
+    [] ->
+      case saw_content {
+        True -> acc + 1
+        False -> acc
+      }
+    [g, ..rest] -> {
+      case is_terminator(g), is_whitespace(g) {
+        True, _ -> {
+          // For `.`, suppress termination inside a token or after an
+          // abbreviation. `!` and `?` always terminate.
+          let suppress = case g {
+            "." -> period_continues_sentence(current_word, rest)
+            _ -> False
+          }
+          let next_acc = case suppress, in_terminator {
+            True, _ -> acc
+            False, True -> acc
+            False, False ->
+              case saw_content {
+                True -> acc + 1
+                False -> acc
+              }
+          }
+          let next_in_terminator = case suppress {
+            True -> False
+            False -> True
+          }
+          let next_saw_content = case suppress {
+            True -> saw_content
+            False -> False
+          }
+          let next_word = case suppress {
+            // Keep the abbreviation token attached to the period so
+            // multi-period abbreviations like "e.g." chain correctly.
+            True -> [".", ..current_word]
+            False -> []
+          }
+          sentence_loop(
+            rest,
+            next_saw_content,
+            next_in_terminator,
+            next_word,
+            next_acc,
+          )
+        }
+        False, True -> sentence_loop(rest, saw_content, False, [], acc)
+        False, False ->
+          sentence_loop(rest, True, False, [g, ..current_word], acc)
+      }
+    }
+  }
+}
+
+fn is_terminator(g: String) -> Bool {
+  case g {
+    "." | "!" | "?" -> True
+    _ -> False
+  }
+}
+
+// `reversed_word` is the token before the period, graphemes reversed,
+// with the periods of a multi-period abbreviation kept in it (`"p.m"`
+// for the second period of `p.m.`). `rest` is the text after it.
+fn period_continues_sentence(
+  reversed_word: List(String),
+  rest: List(String),
+) -> Bool {
+  let word =
+    reversed_word
+    |> list.reverse
+    |> string.concat
+    |> string.lowercase
+  case rest {
+    [next, ..] -> is_letter_like(next)
+    [] -> False
+  }
+  || is_abbreviation(word)
+  || { is_multi_period_abbreviation(word) && !starts_capitalised(rest) }
+}
+
+fn is_abbreviation(word: String) -> Bool {
+  case word {
+    "mr" | "mrs" | "ms" | "dr" | "prof" | "jr" | "sr" | "st" -> True
+    "vs" | "etc" | "no" | "co" | "inc" | "ltd" | "fig" | "vol" | "ch" -> True
+    "ave" | "blvd" -> True
+    // Months (3-letter and 4-letter forms).
+    "jan" | "feb" | "mar" | "apr" | "jun" | "jul" -> True
+    "aug" | "sep" | "sept" | "oct" | "nov" | "dec" -> True
+    // Days of week.
+    "mon" | "tue" | "tues" | "wed" | "thu" | "thur" | "thurs" -> True
+    "fri" | "sat" | "sun" -> True
+    _ -> False
+  }
+}
+
+// Two or more one- or two-letter parts joined by periods: `e.g`, `a.m`,
+// `u.s.a`, `ph.d`.
+fn is_multi_period_abbreviation(word: String) -> Bool {
+  case string.split(word, on: ".") {
+    [_] -> False
+    parts ->
+      list.all(parts, fn(part) {
+        let letters = string.to_graphemes(part)
+        let length = list.length(letters)
+        length >= 1 && length <= 2 && list.all(letters, is_ascii_letter)
+      })
+  }
+}
+
+fn starts_capitalised(rest: List(String)) -> Bool {
+  case list.drop_while(rest, is_whitespace) {
+    [next, ..] ->
+      string.uppercase(next) == next && string.lowercase(next) != next
+    [] -> False
+  }
+}
+
+fn is_whitespace(g: String) -> Bool {
+  case g {
+    " " | "\t" | "\n" | "\r" | "\u{00A0}" -> True
+    _ -> False
+  }
+}
+
+fn has_non_whitespace(items: List(String)) -> Bool {
+  case items {
+    [] -> False
+    [g, ..rest] ->
+      case is_whitespace(g) {
+        True -> has_non_whitespace(rest)
+        False -> True
+      }
+  }
+}
+
+fn is_ascii_letter(g: String) -> Bool {
+  case string.to_utf_codepoints(g) {
+    [] -> False
+    [cp, ..] -> {
+      let n = string.utf_codepoint_to_int(cp)
+      n >= 0x61 && n <= 0x7a
+    }
   }
 }

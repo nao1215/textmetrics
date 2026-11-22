@@ -108,7 +108,7 @@ pub fn sentences(text: String) -> Int {
   let graphemes = string.to_graphemes(text)
   case has_non_whitespace(graphemes) {
     False -> 0
-    True -> sentence_loop(graphemes, False, False, [], 0)
+    True -> sentence_loop(graphemes, False, False, empty_word, 0)
   }
 }
 
@@ -116,7 +116,7 @@ fn sentence_loop(
   items: List(String),
   saw_content: Bool,
   in_terminator: Bool,
-  current_word: List(String),
+  current_word: Word,
   acc: Int,
 ) -> Int {
   case items {
@@ -154,8 +154,8 @@ fn sentence_loop(
           let next_word = case suppress {
             // Keep the abbreviation token attached to the period so
             // multi-period abbreviations like "e.g." chain correctly.
-            True -> [".", ..current_word]
-            False -> []
+            True -> push_period(current_word)
+            False -> empty_word
           }
           sentence_loop(
             rest,
@@ -165,9 +165,9 @@ fn sentence_loop(
             next_acc,
           )
         }
-        False, True -> sentence_loop(rest, saw_content, False, [], acc)
+        False, True -> sentence_loop(rest, saw_content, False, empty_word, acc)
         False, False ->
-          sentence_loop(rest, True, False, [g, ..current_word], acc)
+          sentence_loop(rest, True, False, push_grapheme(current_word, g), acc)
       }
     }
   }
@@ -180,27 +180,90 @@ fn is_terminator(g: String) -> Bool {
   }
 }
 
-/// `reversed_word` is the token before the period, graphemes reversed,
-/// with the periods of a multi-period abbreviation kept in it (`"p.m"`
-/// for the second period of `p.m.`). `rest` is the text after it.
-fn period_continues_sentence(
-  reversed_word: List(String),
-  rest: List(String),
-) -> Bool {
-  let word =
-    reversed_word
-    |> list.reverse
-    |> string.concat
-    |> string.lowercase
-  case rest {
+// What the abbreviation checks need to know about the token before a
+// period (with the periods of a multi-period abbreviation kept in it,
+// `p.m` for the second period of `p.m.`), kept in constant space so that
+// long dotted tokens stay linear.
+type Word {
+  Word(
+    // The graphemes in reverse order, while the token is no longer than
+    // the longest abbreviation.
+    reversed_start: List(String),
+    length: Int,
+    periods: Int,
+    // Graphemes since the last period.
+    part_length: Int,
+    // Every part so far is one or two ASCII letters (the current one may
+    // still be empty).
+    parts_are_short_letters: Bool,
+  )
+}
+
+const empty_word =
+  Word(
+    reversed_start: [],
+    length: 0,
+    periods: 0,
+    part_length: 0,
+    parts_are_short_letters: True,
+  )
+
+const longest_abbreviation = 5
+
+fn push_grapheme(word: Word, g: String) -> Word {
+  Word(
+    reversed_start: push_start(word, g),
+    length: word.length + 1,
+    periods: word.periods,
+    part_length: word.part_length + 1,
+    parts_are_short_letters: word.parts_are_short_letters
+      && word.part_length < 2
+      && is_ascii_letter(string.lowercase(g)),
+  )
+}
+
+fn push_period(word: Word) -> Word {
+  Word(
+    reversed_start: push_start(word, "."),
+    length: word.length + 1,
+    periods: word.periods + 1,
+    part_length: 0,
+    parts_are_short_letters: word.parts_are_short_letters
+      && word.part_length >= 1,
+  )
+}
+
+fn push_start(word: Word, g: String) -> List(String) {
+  case word.length < longest_abbreviation {
+    True -> [g, ..word.reversed_start]
+    False -> word.reversed_start
+  }
+}
+
+/// `rest` is the text after the period.
+fn period_continues_sentence(word: Word, rest: List(String)) -> Bool {
+  let next_is_letter_like = case rest {
     [next, ..] -> is_letter_like(next)
     [] -> False
   }
+  next_is_letter_like
   || is_abbreviation(word)
   || { is_multi_period_abbreviation(word) && !starts_capitalised(rest) }
 }
 
-fn is_abbreviation(word: String) -> Bool {
+fn is_abbreviation(word: Word) -> Bool {
+  case word.length <= longest_abbreviation {
+    False -> False
+    True ->
+      word.reversed_start
+      |> list.reverse
+      |> string.concat
+      |> string.lowercase
+      |> is_abbreviation_text
+  }
+}
+
+fn is_abbreviation_text(word: String) -> Bool {
   case word {
     "mr" | "mrs" | "ms" | "dr" | "prof" | "jr" | "sr" | "st" -> True
     "vs" | "etc" | "no" | "co" | "inc" | "ltd" | "fig" | "vol" | "ch" -> True
@@ -217,16 +280,8 @@ fn is_abbreviation(word: String) -> Bool {
 
 /// Two or more one- or two-letter parts joined by periods: `e.g`, `a.m`,
 /// `u.s.a`, `ph.d`.
-fn is_multi_period_abbreviation(word: String) -> Bool {
-  case string.split(word, on: ".") {
-    [_] -> False
-    parts ->
-      list.all(parts, fn(part) {
-        let letters = string.to_graphemes(part)
-        let length = list.length(letters)
-        length >= 1 && length <= 2 && list.all(letters, is_ascii_letter)
-      })
-  }
+fn is_multi_period_abbreviation(word: Word) -> Bool {
+  word.periods >= 1 && word.parts_are_short_letters && word.part_length >= 1
 }
 
 fn starts_capitalised(rest: List(String)) -> Bool {
