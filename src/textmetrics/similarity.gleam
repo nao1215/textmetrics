@@ -30,8 +30,9 @@ pub type JaroWinklerConfigError {
 
 /// Validated parameter bag for [`jaro_winkler_with`](#jaro_winkler_with).
 ///
-/// A value of this type is *guaranteed* to encode parameters that keep
-/// Jaro-Winkler output inside `[0.0, 1.0]`. Construct via
+/// Jaro-Winkler output stays inside `[0.0, 1.0]` for every value of this
+/// type: the prefix length that counts is capped so that
+/// `prefix_scale * prefix_length <= 1`. Construct via
 /// [`default_jaro_winkler_config`](#default_jaro_winkler_config) or
 /// [`jaro_winkler_config`](#jaro_winkler_config).
 pub opaque type JaroWinklerConfig {
@@ -46,9 +47,9 @@ pub fn default_jaro_winkler_config() -> JaroWinklerConfig {
 /// Construct a [`JaroWinklerConfig`](#JaroWinklerConfig).
 ///
 /// Invariants:
-/// - `prefix_scale` must be in `[0.0, 0.25]` (Winkler's upper bound
-///   that keeps the score in `[0, 1]`).
-/// - `prefix_max` must be `>= 0`.
+/// - `prefix_scale` must be in `[0.0, 0.25]`.
+/// - `prefix_max` must be `>= 0`. At most `1 / prefix_scale` prefix
+///   graphemes count, whatever `prefix_max` says.
 pub fn jaro_winkler_config(
   prefix_scale prefix_scale: Float,
   prefix_max prefix_max: Int,
@@ -96,17 +97,29 @@ pub fn jaro_winkler(a: String, b: String) -> Float {
 }
 
 /// Jaro-Winkler similarity with caller-supplied parameters.
+///
+/// The prefix boost is applied only when the Jaro score is above `0.7`
+/// (Winkler's boost threshold, as in rapidfuzz and jellyfish).
 pub fn jaro_winkler_with(
   a: String,
   b: String,
   config: JaroWinklerConfig,
 ) -> Float {
-  let ga = string.to_graphemes(a)
-  let gb = string.to_graphemes(b)
-  let j = jaro_graphemes(ga, gb)
-  let l = common_prefix_length(ga, gb, 0, config.prefix_max) |> int.to_float
-  j +. l *. config.prefix_scale *. { 1.0 -. j }
+  let a_graphemes = string.to_graphemes(a)
+  let b_graphemes = string.to_graphemes(b)
+  let jaro_score = jaro_graphemes(a_graphemes, b_graphemes)
+  case jaro_score >. boost_threshold {
+    False -> jaro_score
+    True -> {
+      let prefix =
+        common_prefix_length(a_graphemes, b_graphemes, 0, config)
+        |> int.to_float
+      jaro_score +. prefix *. config.prefix_scale *. { 1.0 -. jaro_score }
+    }
+  }
 }
+
+const boost_threshold = 0.7
 
 /// Sørensen-Dice over bigrams (`n = 2`) — the de-facto standard for
 /// string similarity. Sibling of [`jaro`](#jaro) /
@@ -358,23 +371,22 @@ fn skip_unmatched_b(b_matched: Dict(Int, Bool), k: Int) -> Int {
   }
 }
 
+// Stops at `prefix_max`, and also before `prefix_scale * count` would
+// exceed 1, which keeps the boosted score at or below 1.0.
 fn common_prefix_length(
   a: List(String),
   b: List(String),
   count: Int,
-  max: Int,
+  config: JaroWinklerConfig,
 ) -> Int {
-  case count >= max {
-    True -> count
-    False ->
-      case a, b {
-        [x, ..xs], [y, ..ys] ->
-          case x == y {
-            True -> common_prefix_length(xs, ys, count + 1, max)
-            False -> count
-          }
-        _, _ -> count
-      }
+  let at_limit =
+    count >= config.prefix_max
+    || int.to_float(count + 1) *. config.prefix_scale >. 1.0
+  case at_limit, a, b {
+    True, _, _ -> count
+    False, [x, ..xs], [y, ..ys] if x == y ->
+      common_prefix_length(xs, ys, count + 1, config)
+    False, _, _ -> count
   }
 }
 
