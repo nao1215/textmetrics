@@ -1,10 +1,10 @@
 # Testing
 
-`just ci` runs everything below except the nightly job and mutation testing. Tests run on the Erlang and JavaScript targets, on the Gleam floor (1.14.0, OTP 27, Node 22) and on the latest Gleam 1.x, on Linux, macOS and Windows.
+`just ci` runs formatting, lint, type checking, and the Gleam builds and tests on both targets. CI checks the Gleam floor (1.14.0, OTP 27, Node 22) on Ubuntu and the latest Gleam 1.x on Linux, macOS, and Windows. Generator checks and mutation tests run separately; the nightly workflow repeats the Gleam suite.
 
 ## Examples and unit tests
 
-Every module has a test file under `test/textmetrics/`. `test/reference/` pins published values (Levenshtein, Jaro and Jaro-Winkler examples, NFC/NFD equivalence), `test/readme_test.gleam` runs the README snippets, and each fixed bug keeps its reproduction in a `test/regression_*_test.gleam` file. `test/dig_round1_boundary_test.gleam` and `test/dig_round4_targeted_test.gleam` probe empty inputs, single graphemes, emoji sequences and the internals of the diff algorithms.
+Tests under `test/textmetrics/` cover each algorithm family through the public `textmetrics` module. `test/reference/` pins published values and NFC/NFD equivalence, `test/readme_test.gleam` retains runnable usage examples, and each fixed bug keeps its reproduction in a `test/regression_*_test.gleam` file. Boundary tests cover empty inputs, single graphemes, emoji sequences, and diff behavior.
 
 ## Generated properties
 
@@ -16,11 +16,19 @@ Every module has a test file under `test/textmetrics/`. `test/reference/` pins p
 
 ## Differential testing
 
-`test/reference/naive_oracle_test.gleam` compares the optimised distance code (rolling rows, a dictionary-backed matrix) with the plain recursive definitions of Levenshtein, optimal string alignment and the LCS length on random short strings that mix repeated letters, precomposed and decomposed accents and an emoji with a skin-tone modifier. Damerau-Levenshtein, which has no short recursive definition, is checked to lie between half of Levenshtein and the smaller of OSA and Levenshtein, and `lcs.sequence` must be a common subsequence of maximal length.
+`test/reference/naive_oracle_test.gleam` compares distance implementations with recursive definitions of Levenshtein, optimal string alignment, and LCS length on short strings with repeated letters, accents, and emoji. Damerau-Levenshtein is checked against distance bounds, and `longest_common_subsequence` must return a common subsequence of maximal length. The legacy reference keeps its independent algorithms; its Jaro half-transposition arithmetic is explicitly corrected and checked against hand-calculated values.
 
 ## Unified diff round trip
 
-`test/property/unified_round_trip_test.gleam` applies the output of `diff.to_unified` with a strict applier written in the test: the file header, hunk headers whose counts match the body, hunks in order without overlap, and context and deleted lines that equal the old file. Applying the patch to `old` must give `new` for Myers and Patience scripts and 0 to 4 context lines, and the context must be minimal: at most `n` unchanged lines before and after the changes of a hunk, at most `2n` between two changes, and at least one unshown line between two hunks.
+`test/property/unified_round_trip_test.gleam` applies `to_unified` output with an independent test parser. It validates both old and new hunk positions, zero-count ranges, body counts, ordered nonoverlapping hunks, and context/deletions against the old input. Invalid fixtures exercise the parser itself, including a wrong new position in a later hunk. Applying the patch must reconstruct the new input for Myers and patience scripts and zero to four context lines. Context must remain minimal.
+
+## Unicode generation and API boundaries
+
+The Unicode regressions cover unassigned code points, noncharacters, First/Last range interiors, and the Unicode 15.1 version boundary. They also check the effects on sentence counts, polysyllabic words, and SMOG's sentence minimum. The direct nonempty word-syllable fallback is tested separately from phrase counting.
+
+`scripts/test_gen_unicode_category.py` tests the fixed-data generator, malformed ranges, and output preservation and temporary-file cleanup on failure. The regeneration commands are in CONTRIBUTING.md. During the API refactor, an independent parser compared the generated Gleam function with the fixed Unicode data over all 1,113,984 code points above U+007F on both targets; there were no differences.
+
+The API validation tests cover Jaro-Winkler and unified diff error priority before empty or unchanged input shortcuts. Raw readability fixtures include values outside display ranges; separate assertions apply the caller's clamp. Generic list tests use integers and records as well as strings.
 
 ## Nightly runs
 
@@ -28,7 +36,7 @@ Every module has a test file under `test/textmetrics/`. `test/reference/` pins p
 
 ## Mutation testing
 
-There is no mutation testing tool for Gleam, so `gleam_mutate.py` (from the mutation-testing lab in nao1215/debimate) is run by hand on a copy of the project. It rewrites one operator or boolean result at a time and runs `gleam test` on the Erlang target; a mutant that makes the suite hang past 120 seconds counts as killed. For this run the script also mutated integer comparisons and `+` / `-`. The score is killed / (killed + lived).
+Manual mutation checks use `gleam_mutate.py` from the mutation-testing lab in nao1215/debimate on a copy of the project. It rewrites one operator or boolean result at a time and runs `gleam test` on the Erlang target; a timeout beyond 120 seconds counts as killed. The recorded run also mutated integer comparisons and `+` / `-`. The score is killed / (killed + lived). The module names below describe the source layout at the time of that run.
 
 | Date | Files | Killed | Lived | Score |
 |---|---|---:|---:|---:|

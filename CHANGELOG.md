@@ -7,6 +7,37 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ## [Unreleased]
 
+### Changed
+
+- Breaking: consolidate the `count`, `distance`, `similarity`, `lcs`, `diff`, `edit`, `search`, and `readability` modules into `textmetrics`. Remove the old module paths and the `EditScript(a)` alias; use `List(Edit(a))`.
+- Breaking: prefix the seven count functions with `count_`. Rename `normalized_levenshtein` to `levenshtein_similarity`, `osa` to `optimal_string_alignment`, `lcs.length` and `lcs.sequence` to `longest_common_subsequence_length` and `longest_common_subsequence`, and `edit.cost` and `edit.runs` to `edit_cost` and `edit_runs`.
+- Breaking: make `jaro_winkler` take explicit `prefix_scale` and `prefix_max` arguments and return a Result. Remove `jaro_winkler_with`, `JaroWinklerConfig`, `default_jaro_winkler_config`, `jaro_winkler_config`, `prefix_scale`, and `prefix_max`. Rename `JaroWinklerConfigError` to `JaroWinklerError`. Validate both arguments before inspecting input strings.
+- Breaking: make `to_unified` take explicit `old_name`, `new_name`, and `context_lines` arguments and return a Result. Remove `UnifiedOptions`, `unified_options`, `unified_options_checked`, `with_context_lines`, `with_old_name`, `with_old_name_checked`, `with_new_name`, `with_new_name_checked`, `old_name`, `new_name`, and `context_lines`. Rename `UnifiedOptionsError` to `UnifiedError`. Reject LF, CR, NUL, and tab in filenames instead of silently removing them. Validate the old name, new name, then context count, including unchanged scripts.
+- Breaking: label the `sorensen_dice` size argument `ngram_size` and return `Error(Nil)` for an invalid size. Remove `SorensenDiceError`, `NgramSizeInvalid`, `sorensen_dice_bigrams`, and `sorensen_dice_trigrams`; pass the desired size to `sorensen_dice`.
+- Breaking: remove `closest`; use `did_you_mean` followed by `list.first`.
+- Breaking: return raw formula values from `flesch_reading_ease`, `flesch_kincaid_grade`, `gunning_fog`, `automated_readability_index`, and `coleman_liau_index`, and remove their `_unbounded` counterparts. Apply `result.map(float.clamp)` when a display needs a bounded score. Rename `smog_g` to `smog_extrapolated`; keep `smog`'s 30-sentence requirement.
+- Share normalized graphemes and per-word syllable counts when calculating readability. Keep paragraph counting and the direct word-syllable fallback separate. Return immediately for empty search bounds.
+
+```gleam
+// Before: import textmetrics/similarity
+let score = similarity.jaro_winkler("MARTHA", "MARHTA")
+
+// After: import textmetrics
+let assert Ok(score) = textmetrics.jaro_winkler(
+  "MARTHA", "MARHTA", prefix_scale: 0.1, prefix_max: 4,
+)
+```
+
+### Fixed
+
+- Treat unassigned Unicode 15.1 code points, including noncharacters, as word boundaries instead of letters. This corrects word and character counts and can change sentence boundaries, polysyllable counts, and readability results. For example, `a.\u{FDD0}b` now has two sentences, and `banana\u{FDD0}banana` has two polysyllabic words.
+- Preserve fractional half-transpositions in Jaro similarity. Three mismatches in the matched sequences contribute 1.5 transpositions; integer division previously discarded the fraction. Jaro-Winkler scores and candidate ranking inherit the corrected values.
+
+### Documentation
+
+- Rewrite the README and public comments around the consolidated API, raw readability scores, Unicode input units, and fallible operations. Document that different strings can share a maximum similarity score and that unified diff elements are individual lines without final-newline metadata.
+- Move release verification to CONTRIBUTING.md and document regeneration from the fixed Unicode 15.1 data file. Normalization and grapheme segmentation still use the target runtime's Unicode data.
+
 ## [0.10.0] - 2026-11-22
 
 ### Changed
