@@ -7,6 +7,8 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-23
+
 ### Changed
 
 - Breaking: consolidate the `count`, `distance`, `similarity`, `lcs`, `diff`, `edit`, `search`, and `readability` modules into `textmetrics`. Remove the old module paths and the `EditScript(a)` alias; use `List(Edit(a))`.
