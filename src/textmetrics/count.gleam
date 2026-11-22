@@ -24,10 +24,10 @@ import gleam/string
 /// separated by whitespace or punctuation.
 ///
 /// A grapheme counts as letter-like when its first code point is an
-/// ASCII letter (`a-z` / `A-Z`), an ASCII digit, or any non-ASCII
-/// character (covering Latin-1 letters, CJK ideographs, accented
-/// letters delivered as a single grapheme, etc.). Whitespace and
-/// ASCII punctuation are word boundaries.
+/// ASCII letter (`a-z` / `A-Z`), an ASCII digit, or a non-ASCII
+/// letter, digit or mark (Latin-1 letters, CJK ideographs, accented
+/// letters delivered as a single grapheme, etc.). Whitespace,
+/// punctuation, symbols and emoji are word boundaries.
 ///
 /// Examples:
 ///
@@ -76,8 +76,41 @@ fn is_letter_like_code(n: Int) -> Bool {
     _ if n >= 0x61 && n <= 0x7a -> True
     // ASCII digits
     _ if n >= 0x30 && n <= 0x39 -> True
-    // Anything above ASCII — Latin-1 letters, CJK, accented graphemes
-    _ if n >= 0x80 -> True
+    _ if n < 0x80 -> False
+    // Above ASCII: letters, digits and marks of any script, but not
+    // punctuation, symbols, spaces or emoji.
+    _ -> !is_non_letter_code(n)
+  }
+}
+
+// Punctuation, symbol, space and control code points above U+007F, by
+// block: Latin-1, General Punctuation, currency, arrows to control
+// pictures, box drawing to miscellaneous symbols and arrows,
+// Supplemental Punctuation, CJK punctuation, vertical and small forms,
+// full-width ASCII punctuation, specials and the emoji and symbol blocks.
+fn is_non_letter_code(n: Int) -> Bool {
+  case n {
+    _ if n >= 0x80 && n <= 0xa9 -> True
+    _ if n >= 0xab && n <= 0xb1 -> True
+    0xb4 | 0xbb | 0xbf | 0xd7 | 0xf7 | 0x1680 | 0x3030 | 0xfeff -> True
+    _ if n >= 0xb6 && n <= 0xb8 -> True
+    _ if n >= 0x2000 && n <= 0x206f -> True
+    _ if n >= 0x20a0 && n <= 0x20cf -> True
+    _ if n >= 0x2190 && n <= 0x245f -> True
+    _ if n >= 0x2500 && n <= 0x2bff -> True
+    _ if n >= 0x2e00 && n <= 0x2e7f -> True
+    _ if n >= 0x3000 && n <= 0x3004 -> True
+    _ if n >= 0x3008 && n <= 0x3020 -> True
+    _ if n >= 0x3036 && n <= 0x3037 -> True
+    _ if n >= 0x303d && n <= 0x303f -> True
+    _ if n >= 0xfe10 && n <= 0xfe1f -> True
+    _ if n >= 0xfe30 && n <= 0xfe6f -> True
+    _ if n >= 0xff00 && n <= 0xff0f -> True
+    _ if n >= 0xff1a && n <= 0xff20 -> True
+    _ if n >= 0xff3b && n <= 0xff40 -> True
+    _ if n >= 0xff5b && n <= 0xff65 -> True
+    _ if n >= 0xfff0 && n <= 0xffff -> True
+    _ if n >= 0x1f000 && n <= 0x1faff -> True
     _ -> False
   }
 }
@@ -292,9 +325,24 @@ fn starts_capitalised(rest: List(String)) -> Bool {
   }
 }
 
+// Unicode white space (`White_Space=yes`). Checks every code point, so
+// the single grapheme "\r\n" is whitespace too.
 fn is_whitespace(g: String) -> Bool {
-  case g {
-    " " | "\t" | "\n" | "\r" | "\u{00A0}" -> True
+  case string.to_utf_codepoints(g) {
+    [] -> False
+    codepoints ->
+      list.all(codepoints, fn(codepoint) {
+        is_whitespace_code(string.utf_codepoint_to_int(codepoint))
+      })
+  }
+}
+
+fn is_whitespace_code(n: Int) -> Bool {
+  case n {
+    0x20 | 0x85 | 0xa0 | 0x1680 | 0x2028 | 0x2029 | 0x202f | 0x205f | 0x3000 ->
+      True
+    _ if n >= 0x09 && n <= 0x0d -> True
+    _ if n >= 0x2000 && n <= 0x200a -> True
     _ -> False
   }
 }
@@ -522,10 +570,9 @@ fn finish(chunk: List(String)) -> String {
 // --- characters / polysyllables / paragraphs ----------------------------
 
 /// Count characters that contribute to readability formulas: ASCII
-/// letters plus ASCII digits, **excluding** whitespace and ASCII
-/// punctuation. Non-ASCII graphemes that look letter-like (Latin-1
-/// accents, CJK ideographs) also count, mirroring the behaviour of
-/// `textstat`'s `char_count`.
+/// letters plus ASCII digits, **excluding** whitespace, punctuation,
+/// symbols and emoji. Non-ASCII letters (Latin-1 accents, CJK
+/// ideographs) also count.
 ///
 /// Examples:
 ///

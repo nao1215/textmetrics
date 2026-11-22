@@ -158,7 +158,8 @@ pub fn jaro_matches_v0_9_0_test() {
   )
 }
 
-/// ASCII text built from tokens that exercise the abbreviation rules:
+/// ASCII text (the letter and space rules for other code points changed
+/// after v0.9.0) built from tokens that exercise the abbreviation rules:
 /// periods inside and after tokens, short dotted parts, capitals and
 /// punctuation that is neither a terminator nor whitespace.
 fn sentence_text_generator() -> Generator(String) {
@@ -166,7 +167,7 @@ fn sentence_text_generator() -> Generator(String) {
     generator.element_of([
       "a", "b", "e", "g", "m", "p", "U", "S", "Mr", "mrs", "Dr", "thurs", "etc",
       "Jan", "x1", "3", ".", ".", ".", "!", "?", " ", " ", ",", "-", "\n",
-      "Then", "ph", "D", "\u{00A0}",
+      "Then", "ph", "D",
     ]),
     range.constant(0, 30),
   )
