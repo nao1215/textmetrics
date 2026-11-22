@@ -4,7 +4,7 @@
 
 You need the following tools installed:
 
-- [Gleam](https://gleam.run/) 1.14+ (`.mise.toml` pins the version CI uses for formatting)
+- [Gleam](https://gleam.run/) 1.14+ (`.mise.toml` pins the local formatting toolchain)
 - Erlang/OTP 27+ (CI tests 27 and 29)
 - Node.js 22+ (for JavaScript-target checks)
 - [just](https://github.com/casey/just) as a task runner
@@ -72,7 +72,34 @@ When reporting a bug, include:
 - Minimal reproduction code
 - Expected behavior and actual behavior
 
+## Regenerating Unicode categories
+
+The category table uses Unicode 15.1.0. Regeneration requires Python 3 and Gleam 1.19.2 for formatting. Download the fixed input separately, then run the generator:
+
+```sh
+curl -LfsS https://www.unicode.org/Public/15.1.0/ucd/UnicodeData.txt -o /tmp/UnicodeData-15.1.0.txt
+python3 scripts/gen_unicode_category.py --unicode-data /tmp/UnicodeData-15.1.0.txt
+python3 scripts/gen_unicode_category.py --unicode-data /tmp/UnicodeData-15.1.0.txt --check
+python3 -m unittest discover -s scripts -p 'test_gen_unicode_category.py'
+```
+
+The generator checks the input SHA-256, expands First/Last ranges, and treats unlisted code points as unassigned. It replaces the output only after parsing and formatting succeed; `--check` compares without replacing it. It does not use Python's Unicode database or download data. The fixed classification table is separate from the target runtime's NFC normalization and grapheme segmentation.
+
+## Verifying releases
+
+Each GitHub Release attaches the Hex package tarball (`textmetrics-<version>.tar`), `checksums.txt`, a cosign signature bundle (`checksums.txt.sigstore.json`), and build provenance (`textmetrics-<version>.intoto.jsonl`). Download the assets, then:
+
+```sh
+gh attestation verify textmetrics-<version>.tar --repo nao1215/textmetrics
+
+cosign verify-blob \
+  --bundle checksums.txt.sigstore.json \
+  --certificate-identity-regexp '^https://github\.com/nao1215/textmetrics/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  checksums.txt
+sha256sum --check checksums.txt
+```
+
 ## License
 
-Contributions to this project are considered to be released under the
-project's MIT license.
+Contributions to this project are considered to be released under the project's MIT license.

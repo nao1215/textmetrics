@@ -1,7 +1,8 @@
 //// The diff, LCS and distance algorithms were rewritten to use less
 //// time and memory. These properties check that the rewrites return
 //// exactly what v0.9.0 returned (copied into `legacy/v0_9_0`), including
-//// which of several equally good answers is chosen.
+//// which of several equally good answers is chosen. Jaro uses the same
+//// legacy matcher with fractional half-transposition arithmetic corrected.
 
 import gleam/list
 import gleam/string
@@ -9,12 +10,8 @@ import legacy/v0_9_0
 import metamon
 import metamon/generator.{type Generator}
 import metamon/generator/range
-import textmetrics/count
-import textmetrics/diff
-import textmetrics/distance
+import textmetrics
 import textmetrics/internal/unicode
-import textmetrics/lcs
-import textmetrics/similarity
 
 fn config() -> metamon.Config {
   metamon.default_config() |> metamon.with_runs_or_panic(400)
@@ -63,28 +60,28 @@ fn nfc_graphemes(text: String) -> List(String) {
 pub fn myers_matches_v0_9_0_test() {
   metamon.forall_with(config(), lines_pair_generator(14), fn(pair) {
     let #(old, new) = pair
-    diff.myers(old, new) == v0_9_0.myers(old, new)
+    textmetrics.myers(old, new) == v0_9_0.myers(old, new)
   })
 }
 
 pub fn myers_matches_v0_9_0_on_edited_inputs_test() {
   metamon.forall_with(config(), edited_pair_generator(), fn(pair) {
     let #(old, new) = pair
-    diff.myers(old, new) == v0_9_0.myers(old, new)
+    textmetrics.myers(old, new) == v0_9_0.myers(old, new)
   })
 }
 
 pub fn patience_matches_v0_9_0_test() {
   metamon.forall_with(config(), lines_pair_generator(14), fn(pair) {
     let #(old, new) = pair
-    diff.patience(old, new) == v0_9_0.patience(old, new)
+    textmetrics.patience(old, new) == v0_9_0.patience(old, new)
   })
 }
 
 pub fn patience_matches_v0_9_0_on_edited_inputs_test() {
   metamon.forall_with(config(), edited_pair_generator(), fn(pair) {
     let #(old, new) = pair
-    diff.patience(old, new) == v0_9_0.patience(old, new)
+    textmetrics.patience(old, new) == v0_9_0.patience(old, new)
   })
 }
 
@@ -105,7 +102,7 @@ pub fn patience_matches_v0_9_0_on_wide_inputs_test() {
     generator.tuple2(wide_lines_generator(), wide_lines_generator()),
     fn(pair) {
       let #(old, new) = pair
-      diff.patience(old, new) == v0_9_0.patience(old, new)
+      textmetrics.patience(old, new) == v0_9_0.patience(old, new)
     },
   )
 }
@@ -113,14 +110,14 @@ pub fn patience_matches_v0_9_0_on_wide_inputs_test() {
 pub fn lcs_sequence_matches_v0_9_0_test() {
   metamon.forall_with(config(), lines_pair_generator(14), fn(pair) {
     let #(a, b) = pair
-    lcs.sequence(a, b) == v0_9_0.lcs_sequence(a, b)
+    textmetrics.longest_common_subsequence(a, b) == v0_9_0.lcs_sequence(a, b)
   })
 }
 
 pub fn lcs_sequence_matches_v0_9_0_on_edited_inputs_test() {
   metamon.forall_with(config(), edited_pair_generator(), fn(pair) {
     let #(a, b) = pair
-    lcs.sequence(a, b) == v0_9_0.lcs_sequence(a, b)
+    textmetrics.longest_common_subsequence(a, b) == v0_9_0.lcs_sequence(a, b)
   })
 }
 
@@ -130,7 +127,7 @@ pub fn damerau_levenshtein_matches_v0_9_0_test() {
     generator.tuple2(word_generator(), word_generator()),
     fn(pair) {
       let #(a, b) = pair
-      distance.damerau_levenshtein(a, b)
+      textmetrics.damerau_levenshtein(a, b)
       == v0_9_0.damerau_levenshtein(nfc_graphemes(a), nfc_graphemes(b))
     },
   )
@@ -142,18 +139,19 @@ pub fn osa_matches_v0_9_0_test() {
     generator.tuple2(word_generator(), word_generator()),
     fn(pair) {
       let #(a, b) = pair
-      distance.osa(a, b) == v0_9_0.osa(nfc_graphemes(a), nfc_graphemes(b))
+      textmetrics.optimal_string_alignment(a, b)
+      == v0_9_0.osa(nfc_graphemes(a), nfc_graphemes(b))
     },
   )
 }
 
-pub fn jaro_matches_v0_9_0_test() {
+pub fn jaro_matches_fractional_reference_test() {
   metamon.forall_with(
     config(),
     generator.tuple2(word_generator(), word_generator()),
     fn(pair) {
       let #(a, b) = pair
-      similarity.jaro(a, b) == v0_9_0.jaro(nfc_graphemes(a), nfc_graphemes(b))
+      textmetrics.jaro(a, b) == v0_9_0.jaro(nfc_graphemes(a), nfc_graphemes(b))
     },
   )
 }
@@ -176,7 +174,7 @@ fn sentence_text_generator() -> Generator(String) {
 
 pub fn sentences_matches_v0_9_0_test() {
   metamon.forall_with(config(), sentence_text_generator(), fn(text) {
-    count.sentences(text) == v0_9_0.sentences(text)
+    textmetrics.count_sentences(text) == v0_9_0.sentences(text)
   })
 }
 
@@ -190,17 +188,18 @@ fn long_word_generator() -> Generator(String) {
   |> generator.map(string.concat)
 }
 
-pub fn distances_and_jaro_match_v0_9_0_on_long_words_test() {
+pub fn legacy_distances_and_fractional_jaro_match_on_long_words_test() {
   metamon.forall_with(
     config(),
     generator.tuple2(long_word_generator(), long_word_generator()),
     fn(pair) {
       let #(a, b) = pair
       let #(graphemes_a, graphemes_b) = #(nfc_graphemes(a), nfc_graphemes(b))
-      distance.damerau_levenshtein(a, b)
+      textmetrics.damerau_levenshtein(a, b)
       == v0_9_0.damerau_levenshtein(graphemes_a, graphemes_b)
-      && distance.osa(a, b) == v0_9_0.osa(graphemes_a, graphemes_b)
-      && similarity.jaro(a, b) == v0_9_0.jaro(graphemes_a, graphemes_b)
+      && textmetrics.optimal_string_alignment(a, b)
+      == v0_9_0.osa(graphemes_a, graphemes_b)
+      && textmetrics.jaro(a, b) == v0_9_0.jaro(graphemes_a, graphemes_b)
     },
   )
 }

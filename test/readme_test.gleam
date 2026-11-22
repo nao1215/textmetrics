@@ -4,15 +4,8 @@
 //// implementation.
 
 import gleam/list
-import gleam/option.{type Option, None, Some}
-import gleam/result
 import gleeunit/should
-import textmetrics/diff
-import textmetrics/distance.{LengthMismatch}
-import textmetrics/edit
-import textmetrics/lcs
-import textmetrics/search
-import textmetrics/similarity
+import textmetrics.{LengthMismatch}
 
 // ---------------------------------------------------------------------
 // Suggesting a similar command name
@@ -20,7 +13,7 @@ import textmetrics/similarity
 
 pub fn suggest_command(typed: String) -> List(String) {
   let known = ["install", "uninstall", "remove", "update", "help"]
-  search.did_you_mean(typed, known, 2)
+  textmetrics.did_you_mean(typed, known, 2)
 }
 
 pub fn readme_suggest_command_test() {
@@ -29,14 +22,14 @@ pub fn readme_suggest_command_test() {
   suggest_command("xyz") |> should.equal([])
 }
 
-pub fn one_suggestion(typed: String) -> Option(String) {
+pub fn one_suggestion(typed: String) -> Result(String, Nil) {
   let known = ["install", "uninstall", "remove", "update", "help"]
-  search.closest(typed, known, 2)
+  { textmetrics.did_you_mean(typed, known, 2) |> list.first }
 }
 
 pub fn readme_one_suggestion_test() {
-  one_suggestion("instal") |> should.equal(Some("install"))
-  one_suggestion("xyz") |> should.equal(None)
+  one_suggestion("instal") |> should.equal(Ok("install"))
+  one_suggestion("xyz") |> should.equal(Error(Nil))
 }
 
 // ---------------------------------------------------------------------
@@ -44,9 +37,9 @@ pub fn readme_one_suggestion_test() {
 // ---------------------------------------------------------------------
 
 pub fn distances() -> #(Int, Int, Int) {
-  let l = distance.levenshtein("CA", "ABC")
-  let dl = distance.damerau_levenshtein("CA", "ABC")
-  let o = distance.osa("CA", "ABC")
+  let l = textmetrics.levenshtein("CA", "ABC")
+  let dl = textmetrics.damerau_levenshtein("CA", "ABC")
+  let o = textmetrics.optimal_string_alignment("CA", "ABC")
   #(l, dl, o)
 }
 
@@ -56,7 +49,7 @@ pub fn readme_distances_test() {
 
 pub fn levenshtein_similarity() -> Float {
   // levenshtein = 3, max graphemes = 7 → 1 - 3/7 = 4/7.
-  distance.normalized_levenshtein("kitten", "sitting")
+  textmetrics.levenshtein_similarity("kitten", "sitting")
 }
 
 pub fn readme_levenshtein_similarity_test() {
@@ -74,8 +67,8 @@ pub fn readme_levenshtein_similarity_test() {
 pub fn hamming_check(
   a: String,
   b: String,
-) -> Result(Int, distance.HammingError) {
-  distance.hamming(a, b)
+) -> Result(Int, textmetrics.HammingError) {
+  textmetrics.hamming(a, b)
 }
 
 pub fn readme_hamming_test() {
@@ -89,15 +82,23 @@ pub fn readme_hamming_test() {
 // ---------------------------------------------------------------------
 
 pub fn jaro_score() -> Float {
-  similarity.jaro("MARTHA", "MARHTA")
+  textmetrics.jaro("MARTHA", "MARHTA")
 }
 
 pub fn jaro_winkler_score() -> Float {
-  similarity.jaro_winkler("MARTHA", "MARHTA")
+  {
+    textmetrics.jaro_winkler(
+      "MARTHA",
+      "MARHTA",
+      prefix_scale: 0.1,
+      prefix_max: 4,
+    )
+    |> should.be_ok
+  }
 }
 
-pub fn dice_score() -> Result(Float, similarity.SorensenDiceError) {
-  similarity.sorensen_dice("night", "nacht", 2)
+pub fn dice_score() -> Result(Float, Nil) {
+  textmetrics.sorensen_dice("night", "nacht", ngram_size: 2)
 }
 
 pub fn readme_similarity_test() {
@@ -118,12 +119,8 @@ pub fn readme_similarity_test() {
 // Custom Jaro-Winkler parameters
 // ---------------------------------------------------------------------
 
-pub fn aggressive_winkler() -> Result(Float, similarity.JaroWinklerConfigError) {
-  use cfg <- result.map(similarity.jaro_winkler_config(
-    prefix_scale: 0.2,
-    prefix_max: 6,
-  ))
-  similarity.jaro_winkler_with("MARTHA", "MARHTA", cfg)
+pub fn aggressive_winkler() -> Result(Float, textmetrics.JaroWinklerError) {
+  textmetrics.jaro_winkler("MARTHA", "MARHTA", prefix_scale: 0.2, prefix_max: 6)
 }
 
 pub fn readme_aggressive_winkler_test() {
@@ -141,8 +138,16 @@ pub fn readme_aggressive_winkler_test() {
 pub fn render_diff() -> String {
   let old = ["the quick brown", "fox jumps over", "the lazy dog"]
   let new = ["the quick brown", "fox leaps over", "the lazy dog"]
-  let opts = diff.unified_options(old_name: "a", new_name: "b")
-  diff.to_unified(diff.myers(old, new), opts)
+
+  {
+    textmetrics.to_unified(
+      textmetrics.myers(old, new),
+      old_name: "a",
+      new_name: "b",
+      context_lines: 3,
+    )
+    |> should.be_ok
+  }
 }
 
 pub fn readme_render_diff_test() {
@@ -165,8 +170,9 @@ pub fn readme_render_diff_test() {
 pub fn round_trip_holds() -> Bool {
   let old = ["a", "b", "c"]
   let new = ["a", "x", "c"]
-  let script = diff.myers(old, new)
-  edit.recover_old(script) == old && edit.recover_new(script) == new
+  let script = textmetrics.myers(old, new)
+  textmetrics.recover_old(script) == old
+  && textmetrics.recover_new(script) == new
 }
 
 pub fn readme_round_trip_test() {
@@ -180,7 +186,10 @@ pub fn readme_round_trip_test() {
 pub fn lcs_example() -> #(Int, List(String)) {
   let a = ["A", "B", "C", "B", "D", "A", "B"]
   let b = ["B", "D", "C", "A", "B", "A"]
-  #(lcs.length(a, b), lcs.sequence(a, b))
+  #(
+    textmetrics.longest_common_subsequence_length(a, b),
+    textmetrics.longest_common_subsequence(a, b),
+  )
 }
 
 pub fn readme_lcs_test() {

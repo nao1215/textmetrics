@@ -1,4 +1,4 @@
-//// Round trip for `diff.to_unified`: a strict unified-diff applier,
+//// Round trip for `textmetrics.to_unified`: a strict unified-diff applier,
 //// written here independently of the renderer, must turn `old` into
 //// `new` using only the rendered text.
 ////
@@ -16,7 +16,7 @@ import gleam/string
 import metamon
 import metamon/generator.{type Generator}
 import metamon/generator/range
-import textmetrics/diff
+import textmetrics
 
 // ---------- generators ----------
 
@@ -47,35 +47,48 @@ type PatchError {
   CountsDoNotMatchBody
   HunksOverlapOrOutOfOrder
   HunkStartsPastEnd
+  NewStartMismatch(expected: Int, actual: Int)
   ContextMismatch(String)
   DeletedLineMismatch(String)
   BadHunkLine(String)
 }
 
 type Hunk {
-  Hunk(old_start: Int, old_count: Int, new_count: Int, body: List(String))
+  Hunk(
+    old_start: Int,
+    old_count: Int,
+    new_start: Int,
+    new_count: Int,
+    body: List(String),
+  )
 }
 
 /// `"12"` -> #(12, 1), `"12,3"` -> #(12, 3).
 fn parse_range(text: String) -> Result(#(Int, Int), PatchError) {
-  case string.split(text, ",") {
-    [start] -> int.parse(start) |> result.map(fn(s) { #(s, 1) })
-    [start, count] ->
-      case int.parse(start), int.parse(count) {
-        Ok(s), Ok(c) -> Ok(#(s, c))
-        _, _ -> Error(Nil)
-      }
-    _ -> Error(Nil)
+  let parsed =
+    case string.split(text, ",") {
+      [start] -> int.parse(start) |> result.map(fn(s) { #(s, 1) })
+      [start, count] ->
+        case int.parse(start), int.parse(count) {
+          Ok(s), Ok(c) -> Ok(#(s, c))
+          _, _ -> Error(Nil)
+        }
+      _ -> Error(Nil)
+    }
+    |> result.replace_error(BadRange(text))
+  use #(start, count) <- result.try(parsed)
+  case start >= 0 && count >= 0 && { count == 0 || start > 0 } {
+    True -> Ok(#(start, count))
+    False -> Error(BadRange(text))
   }
-  |> result.replace_error(BadRange(text))
 }
 
-fn parse_header(line: String) -> Result(#(Int, Int, Int), PatchError) {
+fn parse_header(line: String) -> Result(#(Int, Int, Int, Int), PatchError) {
   case string.split(line, " ") {
     ["@@", "-" <> old, "+" <> new, "@@"] -> {
       use #(os, oc) <- result.try(parse_range(old))
-      use #(_, nc) <- result.try(parse_range(new))
-      Ok(#(os, oc, nc))
+      use #(ns, nc) <- result.try(parse_range(new))
+      Ok(#(os, oc, ns, nc))
     }
     _ -> Error(BadHunkHeader(line))
   }
@@ -88,10 +101,10 @@ fn parse_hunks(
   case lines {
     [] -> Ok(list.reverse(acc))
     [header, ..rest] -> {
-      use #(os, oc, nc) <- result.try(parse_header(header))
+      use #(os, oc, ns, nc) <- result.try(parse_header(header))
       let #(body, after) =
         list.split_while(rest, fn(l) { !string.starts_with(l, "@@ ") })
-      parse_hunks(after, [Hunk(os, oc, nc, body), ..acc])
+      parse_hunks(after, [Hunk(os, oc, ns, nc, body), ..acc])
     }
   }
 }
@@ -114,7 +127,7 @@ fn apply(patch: String, old: List(String)) -> Result(List(String), PatchError) {
       case string.split(body, "\n") {
         ["--- old", "+++ new", ..hunk_lines] -> {
           use hunks <- result.try(parse_hunks(hunk_lines, []))
-          apply_hunks(hunks, old, 1, [])
+          apply_hunks(hunks, old, 1, 0, [])
         }
         _ -> Error(BadFileHeader)
       }
@@ -122,11 +135,13 @@ fn apply(patch: String, old: List(String)) -> Result(List(String), PatchError) {
   }
 }
 
-/// `line` is the 1-based number of the next unread old line.
+/// `line` is the 1-based next unread old line; `written` counts new lines
+/// already emitted. New starts are checked independently of old starts.
 fn apply_hunks(
   hunks: List(Hunk),
   old: List(String),
   line: Int,
+  written: Int,
   acc: List(String),
 ) -> Result(List(String), PatchError) {
   case hunks {
@@ -156,9 +171,24 @@ fn apply_hunks(
         True -> Ok(Nil)
         False -> Error(HunkStartsPastEnd)
       })
+      let before_hunk = written + list.length(skipped)
+      let expected_new_start = case hunk.new_count {
+        0 -> before_hunk
+        _ -> before_hunk + 1
+      }
+      use _ <- result.try(case hunk.new_start == expected_new_start {
+        True -> Ok(Nil)
+        False -> Error(NewStartMismatch(expected_new_start, hunk.new_start))
+      })
       let acc = list.append(list.reverse(skipped), acc)
       use #(remaining, acc) <- result.try(apply_body(hunk.body, from_hunk, acc))
-      apply_hunks(rest, remaining, first_old + hunk.old_count, acc)
+      apply_hunks(
+        rest,
+        remaining,
+        first_old + hunk.old_count,
+        before_hunk + hunk.new_count,
+        acc,
+      )
     }
   }
 }
@@ -265,11 +295,15 @@ fn context_runs(body: List(String)) -> List(Int) {
   }
 }
 
-fn options(context: Int) -> diff.UnifiedOptions {
-  let assert Ok(options) =
-    diff.unified_options(old_name: "old", new_name: "new")
-    |> diff.with_context_lines(context)
-  options
+fn render(script: List(textmetrics.Edit(String)), context: Int) -> String {
+  let assert Ok(patch) =
+    textmetrics.to_unified(
+      script,
+      old_name: "old",
+      new_name: "new",
+      context_lines: context,
+    )
+  patch
 }
 
 // ---------- relations ----------
@@ -277,8 +311,8 @@ fn options(context: Int) -> diff.UnifiedOptions {
 pub fn to_unified_of_myers_applies_back_to_new_test() -> Nil {
   metamon.forall(input_generator(), fn(input) {
     let #(old, new, context) = input
-    diff.myers(old, new)
-    |> diff.to_unified(options(context))
+    textmetrics.myers(old, new)
+    |> render(context)
     |> apply(old)
     == Ok(new)
   })
@@ -287,8 +321,8 @@ pub fn to_unified_of_myers_applies_back_to_new_test() -> Nil {
 pub fn to_unified_of_patience_applies_back_to_new_test() -> Nil {
   metamon.forall(input_generator(), fn(input) {
     let #(old, new, context) = input
-    diff.patience(old, new)
-    |> diff.to_unified(options(context))
+    textmetrics.patience(old, new)
+    |> render(context)
     |> apply(old)
     == Ok(new)
   })
@@ -308,8 +342,8 @@ pub fn applier_inserts_into_an_empty_file_test() -> Nil {
 pub fn to_unified_shows_minimal_context_test() -> Nil {
   metamon.forall(input_generator(), fn(input) {
     let #(old, new, context) = input
-    diff.myers(old, new)
-    |> diff.to_unified(options(context))
+    textmetrics.myers(old, new)
+    |> render(context)
     |> context_is_minimal(context)
   })
 }
@@ -324,4 +358,49 @@ pub fn context_check_rejects_extra_leading_context_test() -> Nil {
   let patch = "--- old\n+++ new\n@@ -1,3 +1,3 @@\n a\n b\n-c\n+d\n"
   assert !context_is_minimal(patch, 1)
   assert context_is_minimal(patch, 2)
+}
+
+// ---------- applier self-tests independent of renderer output ----------
+
+pub fn applier_rejects_wrong_new_start_in_first_hunk_test() {
+  let patch = "--- old\n+++ new\n@@ -1 +2 @@\n-a\n+b\n"
+  assert apply(patch, ["a"]) == Error(NewStartMismatch(1, 2))
+}
+
+pub fn applier_counts_prior_insertions_and_skipped_lines_for_second_hunk_test() {
+  let first = "--- old\n+++ new\n@@ -0,0 +1 @@\n+x\n"
+  let correct = first <> "@@ -3 +4 @@\n-b\n+c\n"
+  let wrong = first <> "@@ -3 +3 @@\n-b\n+c\n"
+  assert apply(correct, ["a", "gap", "b"]) == Ok(["x", "a", "gap", "c"])
+  assert apply(wrong, ["a", "gap", "b"]) == Error(NewStartMismatch(4, 3))
+}
+
+pub fn applier_accepts_zero_new_count_at_beginning_and_after_unchanged_lines_test() {
+  let beginning = "--- old\n+++ new\n@@ -1 +0,0 @@\n-a\n"
+  let after = "--- old\n+++ new\n@@ -2 +1,0 @@\n-b\n"
+  assert apply(beginning, ["a", "b"]) == Ok(["b"])
+  assert apply(after, ["a", "b"]) == Ok(["a"])
+}
+
+pub fn applier_rejects_next_line_number_for_zero_new_count_test() {
+  let patch = "--- old\n+++ new\n@@ -1 +1,0 @@\n-a\n"
+  assert apply(patch, ["a", "b"]) == Error(NewStartMismatch(0, 1))
+}
+
+pub fn applier_accepts_zero_old_count_insertion_after_last_line_test() {
+  let patch = "--- old\n+++ new\n@@ -1,0 +2 @@\n+b\n"
+  assert apply(patch, ["a"]) == Ok(["a", "b"])
+}
+
+pub fn applier_rejects_negative_and_malformed_ranges_test() {
+  list.each(["-1", "1,-1", "0", "0,1", "1,2,3", "word"], fn(range) {
+    assert parse_range(range) == Error(BadRange(range))
+  })
+  let patch = "--- old\n+++ new\n@@ -1 +-1 @@\n-a\n+b\n"
+  assert apply(patch, ["a"]) == Error(BadRange("-1"))
+}
+
+pub fn applier_checks_new_count_against_actual_body_test() {
+  let patch = "--- old\n+++ new\n@@ -1 +1,2 @@\n-a\n+b\n"
+  assert apply(patch, ["a"]) == Error(CountsDoNotMatchBody)
 }

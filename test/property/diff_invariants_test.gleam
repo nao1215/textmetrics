@@ -4,10 +4,7 @@
 import gleam/list
 import gleam/string
 import gleeunit/should
-import textmetrics/diff
-import textmetrics/distance
-import textmetrics/edit.{Delete, Equal, Insert}
-import textmetrics/lcs
+import textmetrics.{Delete, Equal, Insert}
 
 const string_pairs: List(#(String, String)) = [
   #("", ""),
@@ -40,7 +37,7 @@ const line_pairs: List(#(List(String), List(String))) = [
   #(["a", "a", "a"], ["a", "a"]),
 ]
 
-fn count_kind(script: List(edit.Edit(a)), kind: String) -> Int {
+fn count_kind(script: List(textmetrics.Edit(a)), kind: String) -> Int {
   list.fold(script, 0, fn(acc, e) {
     case e, kind {
       Equal(_), "equal" -> acc + 1
@@ -56,27 +53,27 @@ pub fn myers_round_trip_string_graphemes_test() {
     let #(a, b) = pair
     let ga = string.to_graphemes(a)
     let gb = string.to_graphemes(b)
-    let script = diff.myers(ga, gb)
-    edit.recover_old(script) |> should.equal(ga)
-    edit.recover_new(script) |> should.equal(gb)
+    let script = textmetrics.myers(ga, gb)
+    textmetrics.recover_old(script) |> should.equal(ga)
+    textmetrics.recover_new(script) |> should.equal(gb)
   })
 }
 
 pub fn myers_round_trip_lines_test() {
   list.each(line_pairs, fn(pair) {
     let #(old, new) = pair
-    let script = diff.myers(old, new)
-    edit.recover_old(script) |> should.equal(old)
-    edit.recover_new(script) |> should.equal(new)
+    let script = textmetrics.myers(old, new)
+    textmetrics.recover_old(script) |> should.equal(old)
+    textmetrics.recover_new(script) |> should.equal(new)
   })
 }
 
 pub fn patience_round_trip_test() {
   list.each(line_pairs, fn(pair) {
     let #(old, new) = pair
-    let script = diff.patience(old, new)
-    edit.recover_old(script) |> should.equal(old)
-    edit.recover_new(script) |> should.equal(new)
+    let script = textmetrics.patience(old, new)
+    textmetrics.recover_old(script) |> should.equal(old)
+    textmetrics.recover_new(script) |> should.equal(new)
   })
 }
 
@@ -85,10 +82,13 @@ pub fn myers_optimality_against_lcs_test() {
   // |old| + |new| - 2 · |LCS(old, new)|.
   list.each(line_pairs, fn(pair) {
     let #(old, new) = pair
-    let script = diff.myers(old, new)
+    let script = textmetrics.myers(old, new)
     let expected =
-      list.length(old) + list.length(new) - 2 * lcs.length(old, new)
-    edit.cost(script) |> should.equal(expected)
+      list.length(old)
+      + list.length(new)
+      - 2
+      * textmetrics.longest_common_subsequence_length(old, new)
+    textmetrics.edit_cost(script) |> should.equal(expected)
   })
 }
 
@@ -97,11 +97,15 @@ pub fn myers_optimality_string_graphemes_test() {
     let #(a, b) = pair
     let ga = string.to_graphemes(a)
     let gb = string.to_graphemes(b)
-    let script = diff.myers(ga, gb)
-    let expected = list.length(ga) + list.length(gb) - 2 * lcs.length(ga, gb)
-    edit.cost(script) |> should.equal(expected)
+    let script = textmetrics.myers(ga, gb)
+    let expected =
+      list.length(ga)
+      + list.length(gb)
+      - 2
+      * textmetrics.longest_common_subsequence_length(ga, gb)
+    textmetrics.edit_cost(script) |> should.equal(expected)
     // Sanity: id-only cost is bounded above by 2 × Levenshtein.
-    case edit.cost(script) <= 2 * distance.levenshtein(a, b) {
+    case textmetrics.edit_cost(script) <= 2 * textmetrics.levenshtein(a, b) {
       True -> Nil
       False -> should.fail()
     }
@@ -111,12 +115,12 @@ pub fn myers_optimality_string_graphemes_test() {
 pub fn edit_script_consistency_test() {
   list.each(line_pairs, fn(pair) {
     let #(old, new) = pair
-    let script = diff.myers(old, new)
+    let script = textmetrics.myers(old, new)
     let equals = count_kind(script, "equal")
     let inserts = count_kind(script, "insert")
     let deletes = count_kind(script, "delete")
     list.length(old) |> should.equal(equals + deletes)
     list.length(new) |> should.equal(equals + inserts)
-    edit.cost(script) |> should.equal(inserts + deletes)
+    textmetrics.edit_cost(script) |> should.equal(inserts + deletes)
   })
 }

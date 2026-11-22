@@ -3,14 +3,15 @@
 
 import gleam/list
 import gleeunit/should
-import textmetrics/count
+import textmetrics
 
 pub fn mr_smith_one_sentence_test() -> Nil {
-  count.sentences("Mr. Smith went to Washington.") |> should.equal(1)
+  textmetrics.count_sentences("Mr. Smith went to Washington.")
+  |> should.equal(1)
 }
 
 pub fn dr_who_one_sentence_test() -> Nil {
-  count.sentences("Dr. Who lives.") |> should.equal(1)
+  textmetrics.count_sentences("Dr. Who lives.") |> should.equal(1)
 }
 
 pub fn multi_period_abbreviations_test() -> Nil {
@@ -30,7 +31,8 @@ pub fn multi_period_abbreviations_test() -> Nil {
   ]
   |> list.each(fn(pair) {
     let #(text, expected) = pair
-    #(text, count.sentences(text)) |> should.equal(#(text, expected))
+    #(text, textmetrics.count_sentences(text))
+    |> should.equal(#(text, expected))
   })
 }
 
@@ -45,7 +47,8 @@ pub fn period_inside_a_token_does_not_terminate_test() -> Nil {
   ]
   |> list.each(fn(pair) {
     let #(text, expected) = pair
-    #(text, count.sentences(text)) |> should.equal(#(text, expected))
+    #(text, textmetrics.count_sentences(text))
+    |> should.equal(#(text, expected))
   })
 }
 
@@ -61,31 +64,32 @@ pub fn single_period_abbreviations_unchanged_test() -> Nil {
   ]
   |> list.each(fn(pair) {
     let #(text, expected) = pair
-    #(text, count.sentences(text)) |> should.equal(#(text, expected))
+    #(text, textmetrics.count_sentences(text))
+    |> should.equal(#(text, expected))
   })
 }
 
 pub fn january_first_one_sentence_test() -> Nil {
-  count.sentences("On Jan. 1st we ship.") |> should.equal(1)
+  textmetrics.count_sentences("On Jan. 1st we ship.") |> should.equal(1)
 }
 
 pub fn two_sentences_with_abbreviations_test() -> Nil {
-  count.sentences("Mr. Smith left. Dr. Jones arrived.")
+  textmetrics.count_sentences("Mr. Smith left. Dr. Jones arrived.")
   |> should.equal(2)
 }
 
 pub fn case_insensitive_mr_test() -> Nil {
-  count.sentences("MR. SMITH WENT HOME.") |> should.equal(1)
+  textmetrics.count_sentences("MR. SMITH WENT HOME.") |> should.equal(1)
 }
 
 pub fn normal_period_still_terminates_test() -> Nil {
-  count.sentences("Hello world. Goodbye.") |> should.equal(2)
+  textmetrics.count_sentences("Hello world. Goodbye.") |> should.equal(2)
 }
 
 pub fn questions_and_bangs_still_terminate_test() -> Nil {
-  count.sentences("What?! Now go.") |> should.equal(2)
+  textmetrics.count_sentences("What?! Now go.") |> should.equal(2)
 }
 
 pub fn empty_input_test() -> Nil {
-  count.sentences("") |> should.equal(0)
+  textmetrics.count_sentences("") |> should.equal(0)
 }

@@ -1,8 +1,7 @@
 import gleam/int
 import gleam/list
 import gleeunit/should
-import textmetrics/diff
-import textmetrics/edit.{Equal}
+import textmetrics.{Equal}
 
 // ["1", "2", "1", "3", "2", ..., "k", "k-1"]: only one line is unique at
 // each level, so patience nests about `k` segments deep. The recursive
@@ -21,6 +20,6 @@ fn nested_lines_loop(i: Int, acc: List(String)) -> List(String) {
 
 pub fn patience_deeply_nested_segments_test() {
   let lines = nested_lines(2500)
-  diff.patience(lines, lines)
+  textmetrics.patience(lines, lines)
   |> should.equal(list.map(lines, Equal))
 }
