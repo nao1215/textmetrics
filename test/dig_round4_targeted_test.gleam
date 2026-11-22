@@ -4,10 +4,7 @@
 import gleam/list
 import gleam/string
 import gleeunit/should
-import textmetrics/diff
-import textmetrics/edit
-import textmetrics/lcs
-import textmetrics/similarity
+import textmetrics
 
 // ---------------------------------------------------------------------
 // `to_unified` hunk-merge boundary
@@ -30,8 +27,16 @@ pub fn unified_hunks_merge_at_boundary_test() {
   // and the spec/POSIX convention is to merge.
   let old = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]
   let new = ["a", "B", "c", "d", "e", "f", "g", "h", "I", "j"]
-  let opts = diff.unified_options(old_name: "a", new_name: "b")
-  let out = diff.to_unified(diff.myers(old, new), opts)
+
+  let out = {
+    textmetrics.to_unified(
+      textmetrics.myers(old, new),
+      old_name: "a",
+      new_name: "b",
+      context_lines: 3,
+    )
+    |> should.be_ok
+  }
   count_at_at_headers(out) |> should.equal(1)
 }
 
@@ -39,8 +44,16 @@ pub fn unified_hunks_split_just_past_boundary_test() {
   // Changes at indices 1 and 9 → distance = 8 > 2*3+1, so two hunks.
   let old = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"]
   let new = ["a", "B", "c", "d", "e", "f", "g", "h", "i", "J", "k"]
-  let opts = diff.unified_options(old_name: "a", new_name: "b")
-  let out = diff.to_unified(diff.myers(old, new), opts)
+
+  let out = {
+    textmetrics.to_unified(
+      textmetrics.myers(old, new),
+      old_name: "a",
+      new_name: "b",
+      context_lines: 3,
+    )
+    |> should.be_ok
+  }
   count_at_at_headers(out) |> should.equal(2)
 }
 
@@ -49,9 +62,16 @@ pub fn unified_hunks_zero_context_adjacent_changes_test() {
   // Two changes at indices 1 and 2 (adjacent) should still merge.
   let old = ["a", "b", "c", "d"]
   let new = ["a", "B", "C", "d"]
-  let opts = diff.unified_options(old_name: "a", new_name: "b")
-  let assert Ok(opts0) = diff.with_context_lines(opts, 0)
-  let out = diff.to_unified(diff.myers(old, new), opts0)
+
+  let out = {
+    textmetrics.to_unified(
+      textmetrics.myers(old, new),
+      old_name: "a",
+      new_name: "b",
+      context_lines: 0,
+    )
+    |> should.be_ok
+  }
   count_at_at_headers(out) |> should.equal(1)
 }
 
@@ -60,9 +80,16 @@ pub fn unified_hunks_zero_context_separated_changes_test() {
   // distance = 2 > 2*0+1 = 1, so two hunks.
   let old = ["a", "b", "c", "d", "e"]
   let new = ["a", "B", "c", "D", "e"]
-  let opts = diff.unified_options(old_name: "a", new_name: "b")
-  let assert Ok(opts0) = diff.with_context_lines(opts, 0)
-  let out = diff.to_unified(diff.myers(old, new), opts0)
+
+  let out = {
+    textmetrics.to_unified(
+      textmetrics.myers(old, new),
+      old_name: "a",
+      new_name: "b",
+      context_lines: 0,
+    )
+    |> should.be_ok
+  }
   count_at_at_headers(out) |> should.equal(2)
 }
 
@@ -75,9 +102,9 @@ pub fn patience_anchors_only_at_extremes_test() {
   // inputs. LIS must pick both; the middle is shuffled.
   let old = ["start", "x", "y", "z", "end"]
   let new = ["start", "p", "q", "end"]
-  let script = diff.patience(old, new)
-  edit.recover_old(script) |> should.equal(old)
-  edit.recover_new(script) |> should.equal(new)
+  let script = textmetrics.patience(old, new)
+  textmetrics.recover_old(script) |> should.equal(old)
+  textmetrics.recover_new(script) |> should.equal(new)
 }
 
 pub fn patience_unique_pairs_in_reversed_order_test() {
@@ -86,9 +113,9 @@ pub fn patience_unique_pairs_in_reversed_order_test() {
   // still produce a valid round-trippable script.
   let old = ["a-once", "b-once"]
   let new = ["b-once", "a-once"]
-  let script = diff.patience(old, new)
-  edit.recover_old(script) |> should.equal(old)
-  edit.recover_new(script) |> should.equal(new)
+  let script = textmetrics.patience(old, new)
+  textmetrics.recover_old(script) |> should.equal(old)
+  textmetrics.recover_new(script) |> should.equal(new)
 }
 
 pub fn patience_many_anchors_partly_increasing_test() {
@@ -97,9 +124,9 @@ pub fn patience_many_anchors_partly_increasing_test() {
   // become inserts/deletes inside the segments.
   let old = ["A", "B", "C", "D", "E"]
   let new = ["A", "C", "E", "B", "D"]
-  let script = diff.patience(old, new)
-  edit.recover_old(script) |> should.equal(old)
-  edit.recover_new(script) |> should.equal(new)
+  let script = textmetrics.patience(old, new)
+  textmetrics.recover_old(script) |> should.equal(old)
+  textmetrics.recover_new(script) |> should.equal(new)
 }
 
 pub fn patience_no_unique_anchors_falls_back_test() {
@@ -107,9 +134,9 @@ pub fn patience_no_unique_anchors_falls_back_test() {
   // back to myers and still round-trip.
   let old = ["x", "x", "x", "y", "y"]
   let new = ["x", "x", "y", "y", "y"]
-  let script = diff.patience(old, new)
-  edit.recover_old(script) |> should.equal(old)
-  edit.recover_new(script) |> should.equal(new)
+  let script = textmetrics.patience(old, new)
+  textmetrics.recover_old(script) |> should.equal(old)
+  textmetrics.recover_new(script) |> should.equal(new)
 }
 
 // ---------------------------------------------------------------------
@@ -119,17 +146,17 @@ pub fn patience_no_unique_anchors_falls_back_test() {
 // window is 0, so matching is position-strict.
 
 pub fn jaro_window_zero_la1_lb1_match_test() {
-  similarity.jaro("a", "a") |> should.equal(1.0)
+  textmetrics.jaro("a", "a") |> should.equal(1.0)
 }
 
 pub fn jaro_window_zero_la1_lb1_mismatch_test() {
-  similarity.jaro("a", "b") |> should.equal(0.0)
+  textmetrics.jaro("a", "b") |> should.equal(0.0)
 }
 
 pub fn jaro_window_zero_la1_lb2_first_matches_test() {
   // window = max(1,2)/2 - 1 = 0. b="ab": position 0 is 'a', so a[0]
   // matches at b[0]. m=1, t=0 → (1/1 + 1/2 + 1/1)/3 = 2.5/3.
-  let s = similarity.jaro("a", "ab")
+  let s = textmetrics.jaro("a", "ab")
   case s >. 0.833_3 && s <. 0.833_4 {
     True -> Nil
     False -> should.fail()
@@ -138,7 +165,7 @@ pub fn jaro_window_zero_la1_lb2_first_matches_test() {
 
 pub fn jaro_window_zero_la1_lb2_no_match_test() {
   // window=0, b="ba", b[0]='b' ≠ a[0]='a'. m=0 → 0.0.
-  similarity.jaro("a", "ba") |> should.equal(0.0)
+  textmetrics.jaro("a", "ba") |> should.equal(0.0)
 }
 
 pub fn jaro_window_one_la3_lb3_test() {
@@ -146,7 +173,7 @@ pub fn jaro_window_one_la3_lb3_test() {
   // "abc" vs "bca": a[0]='a' vs b[0]='b' (no), b[1]='c' (out of window=0). No match.
   // a[1]='b' vs b[1]='c' (no). a[2]='c' vs b[2]='a' (no).
   // matches = 0 → 0.0.
-  similarity.jaro("abc", "bca") |> should.equal(0.0)
+  textmetrics.jaro("abc", "bca") |> should.equal(0.0)
 }
 
 // ---------------------------------------------------------------------
@@ -158,9 +185,9 @@ pub fn lcs_sequence_deterministic_test() {
   // sequence on repeat invocation.
   let a = ["A", "B", "C", "B", "D", "A", "B"]
   let b = ["B", "D", "C", "A", "B", "A"]
-  let s1 = lcs.sequence(a, b)
-  let s2 = lcs.sequence(a, b)
-  let s3 = lcs.sequence(a, b)
+  let s1 = textmetrics.longest_common_subsequence(a, b)
+  let s2 = textmetrics.longest_common_subsequence(a, b)
+  let s3 = textmetrics.longest_common_subsequence(a, b)
   s1 |> should.equal(s2)
   s2 |> should.equal(s3)
 }
@@ -170,9 +197,11 @@ pub fn lcs_sequence_deterministic_under_arg_swap_check_test() {
   // not necessarily the "same" in a/b — only the lengths match.
   let a = ["A", "G", "C", "A", "T"]
   let b = ["G", "A", "C"]
-  let len_ab = lcs.length(a, b)
-  let len_ba = lcs.length(b, a)
+  let len_ab = textmetrics.longest_common_subsequence_length(a, b)
+  let len_ba = textmetrics.longest_common_subsequence_length(b, a)
   len_ab |> should.equal(len_ba)
-  list.length(lcs.sequence(a, b)) |> should.equal(len_ab)
-  list.length(lcs.sequence(b, a)) |> should.equal(len_ba)
+  list.length(textmetrics.longest_common_subsequence(a, b))
+  |> should.equal(len_ab)
+  list.length(textmetrics.longest_common_subsequence(b, a))
+  |> should.equal(len_ba)
 }

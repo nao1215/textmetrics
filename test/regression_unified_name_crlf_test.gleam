@@ -1,25 +1,47 @@
 import gleeunit/should
-import textmetrics/diff
+import textmetrics
 
-// "\r\n" is a single grapheme cluster, so a grapheme-wise filter used to
-// keep it and the header broke across lines.
-
-pub fn unified_options_strips_crlf_test() {
-  diff.unified_options(old_name: "a\tb\r\n\u{0000}c", new_name: "x\r\ny")
-  |> fn(options) { #(diff.old_name(options), diff.new_name(options)) }
-  |> should.equal(#("abc", "xy"))
+pub fn unified_rejects_crlf_in_both_names_test() {
+  textmetrics.to_unified(
+    [],
+    old_name: "a\tb\r\n\u{0000}c",
+    new_name: "x\r\ny",
+    context_lines: 3,
+  )
+  |> should.equal(
+    Error(textmetrics.NameContainsForbiddenBytes(
+      textmetrics.OldName,
+      "a\tb\r\n\u{0000}c",
+    )),
+  )
 }
 
-pub fn with_old_name_strips_crlf_test() {
-  diff.unified_options(old_name: "a", new_name: "b")
-  |> diff.with_old_name("old\r\nname")
-  |> diff.old_name
-  |> should.equal("oldname")
+pub fn unified_rejects_crlf_in_old_name_test() {
+  textmetrics.to_unified(
+    [],
+    old_name: "old\r\nname",
+    new_name: "new",
+    context_lines: 3,
+  )
+  |> should.equal(
+    Error(textmetrics.NameContainsForbiddenBytes(
+      textmetrics.OldName,
+      "old\r\nname",
+    )),
+  )
 }
 
-pub fn with_new_name_strips_crlf_test() {
-  diff.unified_options(old_name: "a", new_name: "b")
-  |> diff.with_new_name("new\r\nname\r")
-  |> diff.new_name
-  |> should.equal("newname")
+pub fn unified_rejects_crlf_in_new_name_test() {
+  textmetrics.to_unified(
+    [],
+    old_name: "old",
+    new_name: "new\r\nname\r",
+    context_lines: 3,
+  )
+  |> should.equal(
+    Error(textmetrics.NameContainsForbiddenBytes(
+      textmetrics.NewName,
+      "new\r\nname\r",
+    )),
+  )
 }

@@ -5,19 +5,17 @@
 //// `with_examples`. Every property here corresponds to a published
 //// invariant from spec §13.1 / §13.2 / §13.5.
 
+import gleeunit/should
+
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
 import gleam/order
 import gleam/string
 import metamon
 import metamon/generator
 import metamon/generator/range
-import textmetrics/distance
-import textmetrics/lcs
-import textmetrics/search
-import textmetrics/similarity
+import textmetrics
 
 // ---------------------------------------------------------------------
 // Generator shortcuts
@@ -75,18 +73,20 @@ fn unicode_triple_gen() {
 pub fn levenshtein_non_negative_property_test() {
   metamon.forall(unicode_pair_gen(), fn(p) {
     let #(a, b) = p
-    distance.levenshtein(a, b) >= 0
+    textmetrics.levenshtein(a, b) >= 0
   })
 }
 
 pub fn levenshtein_identity_property_test() {
-  metamon.forall(unicode_string_gen(), fn(a) { distance.levenshtein(a, a) == 0 })
+  metamon.forall(unicode_string_gen(), fn(a) {
+    textmetrics.levenshtein(a, a) == 0
+  })
 }
 
 pub fn levenshtein_symmetry_property_test() {
   metamon.forall(unicode_pair_gen(), fn(p) {
     let #(a, b) = p
-    distance.levenshtein(a, b) == distance.levenshtein(b, a)
+    textmetrics.levenshtein(a, b) == textmetrics.levenshtein(b, a)
   })
 }
 
@@ -96,45 +96,49 @@ pub fn levenshtein_upper_bound_property_test() {
     let la = list.length(string.to_graphemes(a))
     let lb = list.length(string.to_graphemes(b))
     let bound = int.max(la, lb)
-    distance.levenshtein(a, b) <= bound
+    textmetrics.levenshtein(a, b) <= bound
   })
 }
 
 pub fn damerau_non_negative_property_test() {
   metamon.forall(unicode_pair_gen(), fn(p) {
     let #(a, b) = p
-    distance.damerau_levenshtein(a, b) >= 0
+    textmetrics.damerau_levenshtein(a, b) >= 0
   })
 }
 
 pub fn damerau_identity_property_test() {
   metamon.forall(unicode_string_gen(), fn(a) {
-    distance.damerau_levenshtein(a, a) == 0
+    textmetrics.damerau_levenshtein(a, a) == 0
   })
 }
 
 pub fn damerau_symmetry_property_test() {
   metamon.forall(unicode_pair_gen(), fn(p) {
     let #(a, b) = p
-    distance.damerau_levenshtein(a, b) == distance.damerau_levenshtein(b, a)
+    textmetrics.damerau_levenshtein(a, b)
+    == textmetrics.damerau_levenshtein(b, a)
   })
 }
 
 pub fn osa_non_negative_property_test() {
   metamon.forall(unicode_pair_gen(), fn(p) {
     let #(a, b) = p
-    distance.osa(a, b) >= 0
+    textmetrics.optimal_string_alignment(a, b) >= 0
   })
 }
 
 pub fn osa_identity_property_test() {
-  metamon.forall(unicode_string_gen(), fn(a) { distance.osa(a, a) == 0 })
+  metamon.forall(unicode_string_gen(), fn(a) {
+    textmetrics.optimal_string_alignment(a, a) == 0
+  })
 }
 
 pub fn osa_symmetry_property_test() {
   metamon.forall(unicode_pair_gen(), fn(p) {
     let #(a, b) = p
-    distance.osa(a, b) == distance.osa(b, a)
+    textmetrics.optimal_string_alignment(a, b)
+    == textmetrics.optimal_string_alignment(b, a)
   })
 }
 
@@ -142,14 +146,15 @@ pub fn osa_symmetry_property_test() {
 pub fn osa_upper_bounded_by_levenshtein_property_test() {
   metamon.forall(unicode_pair_gen(), fn(p) {
     let #(a, b) = p
-    distance.osa(a, b) <= distance.levenshtein(a, b)
+    textmetrics.optimal_string_alignment(a, b) <= textmetrics.levenshtein(a, b)
   })
 }
 
 pub fn osa_lower_bounded_by_damerau_property_test() {
   metamon.forall(unicode_pair_gen(), fn(p) {
     let #(a, b) = p
-    distance.osa(a, b) >= distance.damerau_levenshtein(a, b)
+    textmetrics.optimal_string_alignment(a, b)
+    >= textmetrics.damerau_levenshtein(a, b)
   })
 }
 
@@ -159,9 +164,9 @@ pub fn levenshtein_triangle_inequality_property_test() {
   let assert Ok(c) = metamon.with_runs(metamon.default_config(), 300)
   metamon.forall_with(c, unicode_triple_gen(), fn(t) {
     let #(a, b, c) = t
-    let ac = distance.levenshtein(a, c)
-    let ab = distance.levenshtein(a, b)
-    let bc = distance.levenshtein(b, c)
+    let ac = textmetrics.levenshtein(a, c)
+    let ab = textmetrics.levenshtein(a, b)
+    let bc = textmetrics.levenshtein(b, c)
     ac <= ab + bc
   })
 }
@@ -170,9 +175,9 @@ pub fn damerau_triangle_inequality_property_test() {
   let assert Ok(c) = metamon.with_runs(metamon.default_config(), 300)
   metamon.forall_with(c, unicode_triple_gen(), fn(t) {
     let #(a, b, c) = t
-    let ac = distance.damerau_levenshtein(a, c)
-    let ab = distance.damerau_levenshtein(a, b)
-    let bc = distance.damerau_levenshtein(b, c)
+    let ac = textmetrics.damerau_levenshtein(a, c)
+    let ab = textmetrics.damerau_levenshtein(a, b)
+    let bc = textmetrics.damerau_levenshtein(b, c)
     ac <= ab + bc
   })
 }
@@ -181,8 +186,8 @@ pub fn damerau_triangle_inequality_property_test() {
 pub fn hamming_geq_levenshtein_property_test() {
   metamon.forall(unicode_pair_gen(), fn(p) {
     let #(a, b) = p
-    case distance.hamming(a, b) {
-      Ok(h) -> h >= distance.levenshtein(a, b)
+    case textmetrics.hamming(a, b) {
+      Ok(h) -> h >= textmetrics.levenshtein(a, b)
       Error(_) -> True
       // skip mismatched lengths
     }
@@ -190,7 +195,9 @@ pub fn hamming_geq_levenshtein_property_test() {
 }
 
 pub fn hamming_identity_property_test() {
-  metamon.forall(unicode_string_gen(), fn(a) { distance.hamming(a, a) == Ok(0) })
+  metamon.forall(unicode_string_gen(), fn(a) {
+    textmetrics.hamming(a, a) == Ok(0)
+  })
 }
 
 pub fn hamming_symmetry_property_test() {
@@ -200,7 +207,7 @@ pub fn hamming_symmetry_property_test() {
   // skip mismatched inputs.
   metamon.forall(unicode_pair_gen(), fn(p) {
     let #(a, b) = p
-    case distance.hamming(a, b), distance.hamming(b, a) {
+    case textmetrics.hamming(a, b), textmetrics.hamming(b, a) {
       Ok(l), Ok(r) -> l == r
       Error(_), Error(_) -> True
       _, _ -> False
@@ -215,22 +222,22 @@ pub fn hamming_symmetry_property_test() {
 pub fn normalized_levenshtein_in_range_property_test() {
   metamon.forall(unicode_pair_gen(), fn(p) {
     let #(a, b) = p
-    let s = distance.normalized_levenshtein(a, b)
+    let s = textmetrics.levenshtein_similarity(a, b)
     s >=. 0.0 && s <=. 1.0
   })
 }
 
 pub fn normalized_levenshtein_identity_property_test() {
   metamon.forall(unicode_string_gen(), fn(a) {
-    distance.normalized_levenshtein(a, a) == 1.0
+    textmetrics.levenshtein_similarity(a, a) == 1.0
   })
 }
 
 pub fn normalized_levenshtein_symmetry_property_test() {
   metamon.forall(unicode_pair_gen(), fn(p) {
     let #(a, b) = p
-    let l = distance.normalized_levenshtein(a, b)
-    let r = distance.normalized_levenshtein(b, a)
+    let l = textmetrics.levenshtein_similarity(a, b)
+    let r = textmetrics.levenshtein_similarity(b, a)
     float.absolute_value(l -. r) <=. 1.0e-12
   })
 }
@@ -242,20 +249,20 @@ pub fn normalized_levenshtein_symmetry_property_test() {
 pub fn jaro_in_range_property_test() {
   metamon.forall(unicode_pair_gen(), fn(p) {
     let #(a, b) = p
-    let s = similarity.jaro(a, b)
+    let s = textmetrics.jaro(a, b)
     s >=. 0.0 && s <=. 1.0
   })
 }
 
 pub fn jaro_identity_property_test() {
-  metamon.forall(unicode_string_gen(), fn(a) { similarity.jaro(a, a) == 1.0 })
+  metamon.forall(unicode_string_gen(), fn(a) { textmetrics.jaro(a, a) == 1.0 })
 }
 
 pub fn jaro_symmetry_property_test() {
   metamon.forall(unicode_pair_gen(), fn(p) {
     let #(a, b) = p
-    let l = similarity.jaro(a, b)
-    let r = similarity.jaro(b, a)
+    let l = textmetrics.jaro(a, b)
+    let r = textmetrics.jaro(b, a)
     float.absolute_value(l -. r) <=. 1.0e-12
   })
 }
@@ -266,22 +273,35 @@ pub fn jaro_winkler_in_range_property_test() {
   let assert Ok(c) = metamon.with_runs(metamon.default_config(), 300)
   metamon.forall_with(c, unicode_pair_gen(), fn(p) {
     let #(a, b) = p
-    let s = similarity.jaro_winkler(a, b)
+    let s = {
+      textmetrics.jaro_winkler(a, b, prefix_scale: 0.1, prefix_max: 4)
+      |> should.be_ok
+    }
     s >=. 0.0 && s <=. 1.0
   })
 }
 
 pub fn jaro_winkler_identity_property_test() {
   metamon.forall(unicode_string_gen(), fn(a) {
-    similarity.jaro_winkler(a, a) == 1.0
+    {
+      textmetrics.jaro_winkler(a, a, prefix_scale: 0.1, prefix_max: 4)
+      |> should.be_ok
+    }
+    == 1.0
   })
 }
 
 pub fn jaro_winkler_symmetry_property_test() {
   metamon.forall(unicode_pair_gen(), fn(p) {
     let #(a, b) = p
-    let l = similarity.jaro_winkler(a, b)
-    let r = similarity.jaro_winkler(b, a)
+    let l = {
+      textmetrics.jaro_winkler(a, b, prefix_scale: 0.1, prefix_max: 4)
+      |> should.be_ok
+    }
+    let r = {
+      textmetrics.jaro_winkler(b, a, prefix_scale: 0.1, prefix_max: 4)
+      |> should.be_ok
+    }
     float.absolute_value(l -. r) <=. 1.0e-12
   })
 }
@@ -289,8 +309,11 @@ pub fn jaro_winkler_symmetry_property_test() {
 pub fn jaro_winkler_floor_property_test() {
   metamon.forall(unicode_pair_gen(), fn(p) {
     let #(a, b) = p
-    let j = similarity.jaro(a, b)
-    let jw = similarity.jaro_winkler(a, b)
+    let j = textmetrics.jaro(a, b)
+    let jw = {
+      textmetrics.jaro_winkler(a, b, prefix_scale: 0.1, prefix_max: 4)
+      |> should.be_ok
+    }
     jw +. 1.0e-12 >=. j
   })
 }
@@ -298,7 +321,7 @@ pub fn jaro_winkler_floor_property_test() {
 pub fn sorensen_dice_in_range_property_test() {
   metamon.forall(unicode_pair_gen(), fn(p) {
     let #(a, b) = p
-    case similarity.sorensen_dice(a, b, 2) {
+    case textmetrics.sorensen_dice(a, b, ngram_size: 2) {
       Ok(s) -> s >=. 0.0 && s <=. 1.0
       Error(_) -> False
     }
@@ -307,7 +330,7 @@ pub fn sorensen_dice_in_range_property_test() {
 
 pub fn sorensen_dice_identity_property_test() {
   metamon.forall(unicode_string_gen(), fn(a) {
-    case similarity.sorensen_dice(a, a, 2) {
+    case textmetrics.sorensen_dice(a, a, ngram_size: 2) {
       Ok(s) -> s == 1.0
       Error(_) -> False
     }
@@ -317,7 +340,10 @@ pub fn sorensen_dice_identity_property_test() {
 pub fn sorensen_dice_symmetry_property_test() {
   metamon.forall(unicode_pair_gen(), fn(p) {
     let #(a, b) = p
-    case similarity.sorensen_dice(a, b, 2), similarity.sorensen_dice(b, a, 2) {
+    case
+      textmetrics.sorensen_dice(a, b, ngram_size: 2),
+      textmetrics.sorensen_dice(b, a, ngram_size: 2)
+    {
       Ok(l), Ok(r) -> float.absolute_value(l -. r) <=. 1.0e-12
       _, _ -> False
     }
@@ -345,7 +371,7 @@ pub fn lcs_length_bounds_property_test() {
     let #(a, b) = p
     let ga = string.to_graphemes(a)
     let gb = string.to_graphemes(b)
-    let l = lcs.length(ga, gb)
+    let l = textmetrics.longest_common_subsequence_length(ga, gb)
     let lo = 0
     let hi = int.min(list.length(ga), list.length(gb))
     l >= lo && l <= hi
@@ -357,7 +383,8 @@ pub fn lcs_length_symmetry_property_test() {
     let #(a, b) = p
     let ga = string.to_graphemes(a)
     let gb = string.to_graphemes(b)
-    lcs.length(ga, gb) == lcs.length(gb, ga)
+    textmetrics.longest_common_subsequence_length(ga, gb)
+    == textmetrics.longest_common_subsequence_length(gb, ga)
   })
 }
 
@@ -366,7 +393,8 @@ pub fn lcs_sequence_length_property_test() {
     let #(a, b) = p
     let ga = string.to_graphemes(a)
     let gb = string.to_graphemes(b)
-    list.length(lcs.sequence(ga, gb)) == lcs.length(ga, gb)
+    list.length(textmetrics.longest_common_subsequence(ga, gb))
+    == textmetrics.longest_common_subsequence_length(ga, gb)
   })
 }
 
@@ -375,7 +403,7 @@ pub fn lcs_sequence_is_subsequence_property_test() {
     let #(a, b) = p
     let ga = string.to_graphemes(a)
     let gb = string.to_graphemes(b)
-    let seq = lcs.sequence(ga, gb)
+    let seq = textmetrics.longest_common_subsequence(ga, gb)
     is_subsequence(seq, ga) && is_subsequence(seq, gb)
   })
 }
@@ -399,8 +427,8 @@ fn search_input_gen() {
 pub fn did_you_mean_sorted_ascending_property_test() {
   metamon.forall(search_input_gen(), fn(t) {
     let #(query, candidates, max_d) = t
-    let result = search.did_you_mean(query, candidates, max_d)
-    let dists = list.map(result, fn(c) { distance.levenshtein(query, c) })
+    let result = textmetrics.did_you_mean(query, candidates, max_d)
+    let dists = list.map(result, fn(c) { textmetrics.levenshtein(query, c) })
     is_non_decreasing(dists)
   })
 }
@@ -420,24 +448,28 @@ fn is_non_decreasing(xs: List(Int)) -> Bool {
 pub fn did_you_mean_within_max_distance_property_test() {
   metamon.forall(search_input_gen(), fn(t) {
     let #(query, candidates, max_d) = t
-    let result = search.did_you_mean(query, candidates, max_d)
-    list.all(result, fn(c) { distance.levenshtein(query, c) <= max_d })
+    let result = textmetrics.did_you_mean(query, candidates, max_d)
+    list.all(result, fn(c) { textmetrics.levenshtein(query, c) <= max_d })
   })
 }
 
 pub fn closest_equals_did_you_mean_head_property_test() {
   metamon.forall(search_input_gen(), fn(t) {
     let #(query, candidates, max_d) = t
-    case search.did_you_mean(query, candidates, max_d) {
+    case textmetrics.did_you_mean(query, candidates, max_d) {
       [] ->
-        case search.closest(query, candidates, max_d) {
-          None -> True
-          Some(_) -> False
+        case
+          { textmetrics.did_you_mean(query, candidates, max_d) |> list.first }
+        {
+          Error(Nil) -> True
+          Ok(_) -> False
         }
       [head, ..] ->
-        case search.closest(query, candidates, max_d) {
-          Some(found) -> found == head
-          None -> False
+        case
+          { textmetrics.did_you_mean(query, candidates, max_d) |> list.first }
+        {
+          Ok(found) -> found == head
+          Error(Nil) -> False
         }
     }
   })
@@ -454,8 +486,8 @@ fn rank_input_gen() {
 pub fn rank_jaro_winkler_descending_property_test() {
   metamon.forall(rank_input_gen(), fn(t) {
     let #(query, candidates, top_n) = t
-    let result = search.rank_jaro_winkler(query, candidates, top_n)
-    let scores = list.map(result, fn(r: search.Ranked) { r.score })
+    let result = textmetrics.rank_jaro_winkler(query, candidates, top_n)
+    let scores = list.map(result, fn(r: textmetrics.Ranked) { r.score })
     is_non_increasing_floats(scores)
   })
 }
@@ -475,7 +507,7 @@ fn is_non_increasing_floats(xs: List(Float)) -> Bool {
 pub fn rank_jaro_winkler_top_n_bound_property_test() {
   metamon.forall(rank_input_gen(), fn(t) {
     let #(query, candidates, top_n) = t
-    let result = search.rank_jaro_winkler(query, candidates, top_n)
+    let result = textmetrics.rank_jaro_winkler(query, candidates, top_n)
     let n = case top_n < 0 {
       True -> 0
       False -> top_n

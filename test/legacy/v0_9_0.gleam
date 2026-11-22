@@ -2,6 +2,8 @@
 //// rewritten for speed and memory. The tests compare the current code
 //// against these on random inputs, so the rewrites must return the
 //// same results, including the choice among equally good answers.
+//// Exception: Jaro half-transposition arithmetic is corrected to preserve
+//// fractional halves; its v0.9.0 Dict-based matcher is unchanged.
 
 import gleam/dict.{type Dict}
 import gleam/int
@@ -9,9 +11,9 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
-import textmetrics/edit.{type EditScript, Delete, Equal, Insert}
+import textmetrics.{Delete, Equal, Insert}
 
-pub fn myers(old: List(a), new: List(a)) -> EditScript(a) {
+pub fn myers(old: List(a), new: List(a)) -> List(textmetrics.Edit(a)) {
   let m = list.length(old)
   let n = list.length(new)
   case m, n {
@@ -125,8 +127,8 @@ fn myers_backtrack(
   d: Int,
   x: Int,
   y: Int,
-  acc: EditScript(a),
-) -> EditScript(a) {
+  acc: List(textmetrics.Edit(a)),
+) -> List(textmetrics.Edit(a)) {
   case d {
     0 -> walk_origin_back(old_arr, x, y, acc)
     _ ->
@@ -170,8 +172,8 @@ fn walk_diag_back(
   y: Int,
   lo_x: Int,
   lo_y: Int,
-  acc: EditScript(a),
-) -> #(Int, Int, EditScript(a)) {
+  acc: List(textmetrics.Edit(a)),
+) -> #(Int, Int, List(textmetrics.Edit(a))) {
   case x > lo_x && y > lo_y {
     False -> #(x, y, acc)
     True ->
@@ -187,8 +189,8 @@ fn walk_origin_back(
   old_arr: Dict(Int, a),
   x: Int,
   y: Int,
-  acc: EditScript(a),
-) -> EditScript(a) {
+  acc: List(textmetrics.Edit(a)),
+) -> List(textmetrics.Edit(a)) {
   case x > 0 && y > 0 {
     False -> acc
     True ->
@@ -205,7 +207,10 @@ fn walk_origin_back(
 /// those anchors, and recursively diffs the surrounding segments.
 /// Falls back to [`myers`](#myers) at leaves where no unique anchors
 /// exist. Operates on `List(String)`.
-pub fn patience(old: List(String), new: List(String)) -> EditScript(String) {
+pub fn patience(
+  old: List(String),
+  new: List(String),
+) -> List(textmetrics.Edit(String)) {
   case old, new {
     [], [] -> []
     [], _ -> list.map(new, fn(item) { Insert(item) })
@@ -230,8 +235,8 @@ fn patience_segments(
   old: List(String),
   new: List(String),
   anchors: List(#(Int, Int)),
-  acc: List(EditScript(String)),
-) -> EditScript(String) {
+  acc: List(List(textmetrics.Edit(String))),
+) -> List(textmetrics.Edit(String)) {
   case anchors {
     [] -> {
       let sub = case old, new {
@@ -748,6 +753,7 @@ fn min4(a: Int, b: Int, c: Int, d: Int) -> Int {
 }
 
 // --- similarity.jaro ---
+// The v0.9.0 matcher is retained; only half-transposition division is corrected.
 
 pub fn jaro(ga: List(String), gb: List(String)) -> Float {
   let la = list.length(ga)
@@ -777,11 +783,10 @@ pub fn jaro(ga: List(String), gb: List(String)) -> Float {
               0,
               0,
             )
-          let t = half_t / 2
           let m_f = int.to_float(matches)
           let la_f = int.to_float(la)
           let lb_f = int.to_float(lb)
-          let t_f = int.to_float(t)
+          let t_f = int.to_float(half_t) /. 2.0
           { m_f /. la_f +. m_f /. lb_f +. { m_f -. t_f } /. m_f } /. 3.0
         }
       }

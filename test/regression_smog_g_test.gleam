@@ -3,18 +3,18 @@
 
 import gleam/string
 import gleeunit/should
-import textmetrics/readability
+import textmetrics
 
 pub fn smog_g_short_text_test() -> Nil {
   let short = "Gleam is functional. It compiles to Erlang. Syntax is clean."
-  let assert Ok(score) = readability.smog_g(short)
+  let assert Ok(score) = textmetrics.smog_extrapolated(short)
   { score >=. 0.0 } |> should.be_true
 }
 
 pub fn smog_g_long_text_matches_smog_test() -> Nil {
   let long = string.repeat("Dog ran fast today. ", 30)
-  let assert Ok(g) = readability.smog_g(long)
-  let assert Ok(s) = readability.smog(long)
+  let assert Ok(g) = textmetrics.smog_extrapolated(long)
+  let assert Ok(s) = textmetrics.smog(long)
   // 30+ 文では SMOG-G と SMOG はほぼ一致
   let diff = case g >. s {
     True -> g -. s
@@ -25,14 +25,14 @@ pub fn smog_g_long_text_matches_smog_test() -> Nil {
 
 pub fn smog_short_text_still_errors_test() -> Nil {
   let short = "Dog ran. Cat sat."
-  case readability.smog(short) {
+  case textmetrics.smog(short) {
     Error(_) -> Nil
     Ok(_) -> should.fail()
   }
 }
 
 pub fn smog_g_rejects_empty_test() -> Nil {
-  case readability.smog_g("") {
+  case textmetrics.smog_extrapolated("") {
     Error(_) -> Nil
     Ok(_) -> should.fail()
   }

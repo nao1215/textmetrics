@@ -1,6 +1,6 @@
 name = "textmetrics"
 version = "0.10.0"
-description = "Edit distances, similarity scores, LCS, and diff for Gleam."
+description = "Text comparisons, diffs, counts, and English readability for Gleam"
 licences = ["MIT"]
 repository = { type = "github", user = "nao1215", repo = "textmetrics" }
 links = [
@@ -25,7 +25,7 @@ include = ["src/", "test/"]
 label_possible = "off"
 prefer_guard_clause = "off"
 unused_exports = "off"
-# Algorithm modules use conventional mathematical names (m, n, i, j, k, l)
+# Algorithms use conventional mathematical names (m, n, i, j, k, l)
 # and DP-table accesses with default fall-throughs that aren't real
 # error-propagation paths.
 short_variable_name = "off"
