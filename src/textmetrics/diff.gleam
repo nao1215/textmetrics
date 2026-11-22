@@ -202,6 +202,31 @@ pub fn context_lines(options: UnifiedOptions) -> Int {
 /// one delete. Tie-breaking prefers earlier deletions over insertions,
 /// matching GNU `diff(1)`.
 pub fn myers(old: List(a), new: List(a)) -> EditScript(a) {
+  // The forward search always matches the common prefix first, so it
+  // is taken off before the O(ND) search. The common suffix is left in:
+  // stripping it would change which of several optimal scripts the
+  // search returns.
+  let #(reversed_prefix, old, new) = split_common_prefix(old, new, [])
+  list.fold(reversed_prefix, myers_middle(old, new), fn(script, item) {
+    [item, ..script]
+  })
+}
+
+// Returns the common prefix as `Equal` edits in reverse order, and the
+// rest of both lists.
+fn split_common_prefix(
+  old: List(a),
+  new: List(a),
+  reversed_prefix: EditScript(a),
+) -> #(EditScript(a), List(a), List(a)) {
+  case old, new {
+    [x, ..old_rest], [y, ..new_rest] if x == y ->
+      split_common_prefix(old_rest, new_rest, [Equal(x), ..reversed_prefix])
+    _, _ -> #(reversed_prefix, old, new)
+  }
+}
+
+fn myers_middle(old: List(a), new: List(a)) -> EditScript(a) {
   let m = list.length(old)
   let n = list.length(new)
   case m, n {
