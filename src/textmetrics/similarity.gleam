@@ -13,6 +13,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
+import gleam/set.{type Set}
 import gleam/string
 import textmetrics/internal/unicode
 
@@ -201,174 +202,107 @@ pub fn sorensen_dice(
 // Jaro internals
 // ---------------------------------------------------------------------
 
-fn jaro_graphemes(ga: List(String), gb: List(String)) -> Float {
-  let la = list.length(ga)
-  let lb = list.length(gb)
-  case la, lb {
+fn jaro_graphemes(a: List(String), b: List(String)) -> Float {
+  let a_length = list.length(a)
+  let b_length = list.length(b)
+  case a_length, b_length {
     0, 0 -> 1.0
     0, _ -> 0.0
     _, 0 -> 0.0
     _, _ -> {
-      let max_len = int.max(la, lb)
-      let window = int.max(0, max_len / 2 - 1)
-      let a_arr = list_to_dict(ga)
-      let b_arr = list_to_dict(gb)
-      let #(matches, a_matched, b_matched) =
-        find_matches(a_arr, b_arr, la, lb, window, 0, 0, dict.new(), dict.new())
-      case matches {
-        0 -> 0.0
+      let window = int.max(0, int.max(a_length, b_length) / 2 - 1)
+      let indexed_b = list.index_map(b, fn(item, index) { #(index, item) })
+      let #(a_matches, b_matched) =
+        find_matches(a, 0, indexed_b, window, b_length, [], set.new())
+      case a_matches {
+        [] -> 0.0
         _ -> {
-          let half_t =
-            count_half_transpositions(
-              a_arr,
-              b_arr,
-              a_matched,
-              b_matched,
-              la,
-              0,
-              0,
-              0,
-            )
-          let t = half_t / 2
-          let m_f = int.to_float(matches)
-          let la_f = int.to_float(la)
-          let lb_f = int.to_float(lb)
-          let t_f = int.to_float(t)
-          { m_f /. la_f +. m_f /. lb_f +. { m_f -. t_f } /. m_f } /. 3.0
+          // Matched graphemes of `b` in `b` order, paired with those of
+          // `a` in `a` order.
+          let b_matches =
+            list.filter_map(indexed_b, fn(entry) {
+              case set.contains(b_matched, entry.0) {
+                True -> Ok(entry.1)
+                False -> Error(Nil)
+              }
+            })
+          let half_transpositions =
+            list.map2(a_matches, b_matches, fn(x, y) { x != y })
+            |> list.count(fn(differs) { differs })
+          let matches = int.to_float(list.length(a_matches))
+          let transpositions = int.to_float(half_transpositions / 2)
+          {
+            matches
+            /. int.to_float(a_length)
+            +. matches
+            /. int.to_float(b_length)
+            +. { matches -. transpositions }
+            /. matches
+          }
+          /. 3.0
         }
       }
     }
   }
 }
 
+// Matches every grapheme of `a` at index `i` with the first unmatched
+// equal grapheme of `b` within `window` of `i`. `window_start` is
+// `indexed_b` from index `i - window` on. Returns the matched graphemes
+// of `a` in order and the matched indices of `b`.
 fn find_matches(
-  a_arr: Dict(Int, String),
-  b_arr: Dict(Int, String),
-  la: Int,
-  lb: Int,
+  a: List(String),
+  i: Int,
+  window_start: List(#(Int, String)),
   window: Int,
-  i: Int,
-  matches: Int,
-  a_matched: Dict(Int, Bool),
-  b_matched: Dict(Int, Bool),
-) -> #(Int, Dict(Int, Bool), Dict(Int, Bool)) {
-  case i >= la {
-    True -> #(matches, a_matched, b_matched)
-    False -> {
-      let ai = result.unwrap(dict.get(a_arr, i), "")
-      let lo = int.max(0, i - window)
-      let hi = int.min(lb - 1, i + window)
-      case find_match_in_range(ai, b_arr, lo, hi, b_matched) {
-        Ok(j) ->
-          find_matches(
-            a_arr,
-            b_arr,
-            la,
-            lb,
-            window,
-            i + 1,
-            matches + 1,
-            dict.insert(a_matched, i, True),
-            dict.insert(b_matched, j, True),
-          )
-        Error(_) ->
-          find_matches(
-            a_arr,
-            b_arr,
-            la,
-            lb,
-            window,
-            i + 1,
-            matches,
-            a_matched,
-            b_matched,
-          )
+  b_length: Int,
+  a_matches: List(String),
+  b_matched: Set(Int),
+) -> #(List(String), Set(Int)) {
+  case a {
+    [] -> #(list.reverse(a_matches), b_matched)
+    [item, ..rest] -> {
+      let #(a_matches, b_matched) = case
+        find_match_in_window(
+          item,
+          window_start,
+          int.min(b_length - 1, i + window),
+          b_matched,
+        )
+      {
+        Ok(j) -> #([item, ..a_matches], set.insert(b_matched, j))
+        Error(Nil) -> #(a_matches, b_matched)
       }
+      let window_start = case i >= window, window_start {
+        True, [_, ..later] -> later
+        _, _ -> window_start
+      }
+      find_matches(
+        rest,
+        i + 1,
+        window_start,
+        window,
+        b_length,
+        a_matches,
+        b_matched,
+      )
     }
   }
 }
 
-fn find_match_in_range(
-  ai: String,
-  b_arr: Dict(Int, String),
-  j: Int,
-  hi: Int,
-  b_matched: Dict(Int, Bool),
+fn find_match_in_window(
+  item: String,
+  candidates: List(#(Int, String)),
+  last_index: Int,
+  b_matched: Set(Int),
 ) -> Result(Int, Nil) {
-  case j > hi {
-    True -> Error(Nil)
-    False -> {
-      let already = case dict.get(b_matched, j) {
-        Ok(True) -> True
-        _ -> False
+  case candidates {
+    [#(j, candidate), ..rest] if j <= last_index ->
+      case candidate == item && !set.contains(b_matched, j) {
+        True -> Ok(j)
+        False -> find_match_in_window(item, rest, last_index, b_matched)
       }
-      case already {
-        True -> find_match_in_range(ai, b_arr, j + 1, hi, b_matched)
-        False -> {
-          let bj = result.unwrap(dict.get(b_arr, j), "")
-          case ai == bj {
-            True -> Ok(j)
-            False -> find_match_in_range(ai, b_arr, j + 1, hi, b_matched)
-          }
-        }
-      }
-    }
-  }
-}
-
-fn count_half_transpositions(
-  a_arr: Dict(Int, String),
-  b_arr: Dict(Int, String),
-  a_matched: Dict(Int, Bool),
-  b_matched: Dict(Int, Bool),
-  la: Int,
-  i: Int,
-  k: Int,
-  trans: Int,
-) -> Int {
-  case i >= la {
-    True -> trans
-    False -> {
-      case dict.get(a_matched, i) {
-        Ok(True) -> {
-          let new_k = skip_unmatched_b(b_matched, k)
-          let ai = result.unwrap(dict.get(a_arr, i), "")
-          let bk = result.unwrap(dict.get(b_arr, new_k), "")
-          let new_trans = case ai == bk {
-            True -> trans
-            False -> trans + 1
-          }
-          count_half_transpositions(
-            a_arr,
-            b_arr,
-            a_matched,
-            b_matched,
-            la,
-            i + 1,
-            new_k + 1,
-            new_trans,
-          )
-        }
-        _ ->
-          count_half_transpositions(
-            a_arr,
-            b_arr,
-            a_matched,
-            b_matched,
-            la,
-            i + 1,
-            k,
-            trans,
-          )
-      }
-    }
-  }
-}
-
-fn skip_unmatched_b(b_matched: Dict(Int, Bool), k: Int) -> Int {
-  case dict.get(b_matched, k) {
-    Ok(True) -> k
-    _ -> skip_unmatched_b(b_matched, k + 1)
+    _ -> Error(Nil)
   }
 }
 

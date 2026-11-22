@@ -84,17 +84,14 @@ pub fn normalized_levenshtein(a: String, b: String) -> Float {
 /// type. Used by `diff` internally and exposed for callers diffing
 /// token streams or AST nodes.
 pub fn levenshtein_list(a: List(t), b: List(t)) -> Int {
+  let m = list.length(a)
   let n = list.length(b)
-  case a {
-    [] -> n
-    _ ->
-      case b {
-        [] -> list.length(a)
-        _ -> {
-          let initial_prev = int_range_inclusive(0, n)
-          levenshtein_outer(a, b, initial_prev, 1)
-        }
-      }
+  case m, n {
+    0, _ -> n
+    _, 0 -> m
+    // The distance is symmetric; the shorter list sets the row length.
+    _, _ if m < n -> levenshtein_outer(b, a, int_range_inclusive(0, m), 1)
+    _, _ -> levenshtein_outer(a, b, int_range_inclusive(0, n), 1)
   }
 }
 
@@ -105,11 +102,7 @@ fn levenshtein_outer(
   i: Int,
 ) -> Int {
   case remaining_a {
-    [] ->
-      case list.last(prev) {
-        Ok(v) -> v
-        Error(_) -> 0
-      }
+    [] -> last_or_zero(prev)
     [ai, ..rest] -> {
       let curr = case prev {
         [p0, ..p_rest] -> levenshtein_inner(ai, bs, p0, p_rest, i, [i])
@@ -153,8 +146,8 @@ fn levenshtein_inner(
 /// Both inputs are pre-normalised to NFC, so canonically-equivalent
 /// strings have distance `0`.
 ///
-/// Time `O(m·n)`, space `O(m·n)` (full matrix is required for the
-/// transposition recurrence).
+/// Time `O(m·n)`, space `O(k·n)` for `k` distinct graphemes in `a`
+/// and `n = length(b)`.
 pub fn damerau_levenshtein(a: String, b: String) -> Int {
   damerau_levenshtein_graphemes(
     string.to_graphemes(unicode.to_nfc(a)),
@@ -162,117 +155,112 @@ pub fn damerau_levenshtein(a: String, b: String) -> Int {
   )
 }
 
+// Lowrance-Wagner. Row `i` of the table needs, besides row `i - 1`, the
+// row before the last occurrence of `b[j]` in `a`; only those rows are
+// kept, one per distinct grapheme of `a`, indexed for random access.
 fn damerau_levenshtein_graphemes(ga: List(String), gb: List(String)) -> Int {
-  let m = list.length(ga)
-  let n = list.length(gb)
-  case m, n {
-    0, _ -> n
-    _, 0 -> m
-    _, _ -> {
-      let a_dict = list_to_dict(ga)
-      let b_dict = list_to_dict(gb)
-      let inf = m + n
-      let initial = init_dl_matrix(m, n, inf)
-      let final_d = dl_outer(a_dict, b_dict, m, n, 1, dict.new(), initial)
-      result.unwrap(dict.get(final_d, #(m + 1, n + 1)), 0)
-    }
+  case ga, gb {
+    [], _ -> list.length(gb)
+    _, [] -> list.length(ga)
+    _, _ ->
+      damerau_levenshtein_rows(
+        ga,
+        gb,
+        1,
+        int_range_inclusive(0, list.length(gb)),
+        dict.new(),
+      )
   }
 }
 
-fn init_dl_matrix(m: Int, n: Int, inf: Int) -> Dict(#(Int, Int), Int) {
-  dict.new()
-  |> dict.insert(#(0, 0), inf)
-  |> init_dl_rows(m, inf, 0)
-  |> init_dl_cols(n, inf, 0)
-}
-
-fn init_dl_rows(
-  d: Dict(#(Int, Int), Int),
-  m: Int,
-  inf: Int,
+fn damerau_levenshtein_rows(
+  remaining_a: List(t),
+  b: List(t),
   i: Int,
-) -> Dict(#(Int, Int), Int) {
-  case i > m {
-    True -> d
-    False -> {
-      d
-      |> dict.insert(#(i + 1, 0), inf)
-      |> dict.insert(#(i + 1, 1), i)
-      |> init_dl_rows(m, inf, i + 1)
+  previous: List(Int),
+  rows_before_last: Dict(t, #(Int, Dict(Int, Int))),
+) -> Int {
+  case remaining_a, previous {
+    [], _ -> last_or_zero(previous)
+    [item, ..rest], [previous_first, ..previous_rest] -> {
+      let row =
+        damerau_levenshtein_row(
+          DamerauRow(item:, i:, rows_before_last:, j: 1, last_match_column: 0),
+          b,
+          previous_first,
+          previous_rest,
+          i,
+          [i],
+        )
+      let indexed_previous =
+        previous
+        |> list.index_map(fn(value, column) { #(column, value) })
+        |> dict.from_list
+      damerau_levenshtein_rows(
+        rest,
+        b,
+        i + 1,
+        row,
+        dict.insert(rows_before_last, item, #(i, indexed_previous)),
+      )
     }
+    [_, ..], [] -> 0
   }
 }
 
-fn init_dl_cols(
-  d: Dict(#(Int, Int), Int),
-  n: Int,
-  inf: Int,
-  j: Int,
-) -> Dict(#(Int, Int), Int) {
-  case j > n {
-    True -> d
-    False -> {
-      d
-      |> dict.insert(#(0, j + 1), inf)
-      |> dict.insert(#(1, j + 1), j)
-      |> init_dl_cols(n, inf, j + 1)
-    }
-  }
+type DamerauRow(t) {
+  DamerauRow(
+    item: t,
+    i: Int,
+    rows_before_last: Dict(t, #(Int, Dict(Int, Int))),
+    j: Int,
+    // The last column `j' < j` of this row where `b[j'] == item`, or 0.
+    last_match_column: Int,
+  )
 }
 
-fn dl_outer(
-  a_dict: Dict(Int, String),
-  b_dict: Dict(Int, String),
-  m: Int,
-  n: Int,
-  i: Int,
-  da: Dict(String, Int),
-  d: Dict(#(Int, Int), Int),
-) -> Dict(#(Int, Int), Int) {
-  case i > m {
-    True -> d
-    False -> {
-      let new_d = dl_inner(a_dict, b_dict, n, i, 1, 0, da, d)
-      let ai = result.unwrap(dict.get(a_dict, i - 1), "")
-      let new_da = dict.insert(da, ai, i)
-      dl_outer(a_dict, b_dict, m, n, i + 1, new_da, new_d)
-    }
-  }
-}
-
-fn dl_inner(
-  a_dict: Dict(Int, String),
-  b_dict: Dict(Int, String),
-  n: Int,
-  i: Int,
-  j: Int,
-  db: Int,
-  da: Dict(String, Int),
-  d: Dict(#(Int, Int), Int),
-) -> Dict(#(Int, Int), Int) {
-  case j > n {
-    True -> d
-    False -> {
-      let ai = result.unwrap(dict.get(a_dict, i - 1), "")
-      let bj = result.unwrap(dict.get(b_dict, j - 1), "")
-      let k = result.unwrap(dict.get(da, bj), 0)
-      let l = db
-      let #(cost, new_db) = case ai == bj {
-        True -> #(0, j)
-        False -> #(1, db)
+fn damerau_levenshtein_row(
+  state: DamerauRow(t),
+  b: List(t),
+  previous_diagonal: Int,
+  previous_rest: List(Int),
+  left: Int,
+  acc: List(Int),
+) -> List(Int) {
+  case b, previous_rest {
+    [item_b, ..b_rest], [above, ..previous_more] -> {
+      let DamerauRow(item:, i:, rows_before_last:, j:, last_match_column:) =
+        state
+      let cost = case item == item_b {
+        True -> 0
+        False -> 1
       }
-      let sub = result.unwrap(dict.get(d, #(i, j)), 0) + cost
-      let ins = result.unwrap(dict.get(d, #(i + 1, j)), 0) + 1
-      let del = result.unwrap(dict.get(d, #(i, j + 1)), 0) + 1
-      let trans =
-        result.unwrap(dict.get(d, #(k, l)), 0)
-        + { i - k - 1 }
-        + 1
-        + { j - l - 1 }
-      let val = min4(sub, ins, del, trans)
-      let new_d = dict.insert(d, #(i + 1, j + 1), val)
-      dl_inner(a_dict, b_dict, n, i, j + 1, new_db, da, new_d)
+      let best = min3(previous_diagonal + cost, left + 1, above + 1)
+      // Transposition through the last `item_b` in `a` (row `k`) and the
+      // last `item` in `b` (column `last_match_column`).
+      let best = case dict.get(rows_before_last, item_b), last_match_column {
+        Ok(#(k, row_before_k)), l if l > 0 ->
+          case dict.get(row_before_k, l - 1) {
+            Ok(value) ->
+              int.min(best, value + { i - k - 1 } + 1 + { j - l - 1 })
+            Error(Nil) -> best
+          }
+        _, _ -> best
+      }
+      let last_match_column = case cost {
+        0 -> j
+        _ -> last_match_column
+      }
+      damerau_levenshtein_row(
+        DamerauRow(..state, j: j + 1, last_match_column:),
+        b_rest,
+        above,
+        previous_more,
+        best,
+        [best, ..acc],
+      )
     }
+    _, _ -> list.reverse(acc)
   }
 }
 
@@ -302,78 +290,91 @@ fn osa_graphemes(ga: List(String), gb: List(String)) -> Int {
   case m, n {
     0, _ -> n
     _, 0 -> m
-    _, _ -> {
-      let a_dict = list_to_dict(ga)
-      let b_dict = list_to_dict(gb)
-      let prev = make_init_row(n)
-      let prev_prev = dict.new()
-      osa_outer(a_dict, b_dict, m, n, 1, prev, prev_prev)
-    }
+    // OSA is symmetric; the shorter list sets the row length.
+    _, _ if m < n -> osa_rows(gb, ga, Error(Nil), int_range_inclusive(0, m), [])
+    _, _ -> osa_rows(ga, gb, Error(Nil), int_range_inclusive(0, n), [])
   }
 }
 
-fn osa_outer(
-  a_dict: Dict(Int, String),
-  b_dict: Dict(Int, String),
-  m: Int,
-  n: Int,
-  i: Int,
-  prev: Dict(Int, Int),
-  prev_prev: Dict(Int, Int),
+// `previous` and `before_previous` are rows `i - 1` and `i - 2` of the
+// table; `previous_a` is `a[i - 1]`.
+fn osa_rows(
+  remaining_a: List(t),
+  b: List(t),
+  previous_a: Result(t, Nil),
+  previous: List(Int),
+  before_previous: List(Int),
 ) -> Int {
-  case i > m {
-    True -> result.unwrap(dict.get(prev, n), 0)
-    False -> {
-      let ai = result.unwrap(dict.get(a_dict, i - 1), "")
-      let prev_a = case dict.get(a_dict, i - 2) {
-        Ok(v) -> Ok(v)
-        Error(_) -> Error(Nil)
-      }
-      let curr0 = dict.insert(dict.new(), 0, i)
-      let curr = osa_inner(ai, prev_a, b_dict, n, prev, prev_prev, 1, curr0)
-      osa_outer(a_dict, b_dict, m, n, i + 1, curr, prev)
+  case remaining_a, previous {
+    [], _ -> last_or_zero(previous)
+    [item, ..rest], [previous_first, ..previous_rest] -> {
+      let i = previous_first + 1
+      let row =
+        osa_row(
+          OsaRow(item:, previous_a:, previous_b: Error(Nil), j: 1),
+          b,
+          previous_first,
+          previous_rest,
+          before_previous,
+          i,
+          [i],
+        )
+      osa_rows(rest, b, Ok(item), row, previous)
     }
+    [_, ..], [] -> 0
   }
 }
 
-fn osa_inner(
-  ai: String,
-  prev_a: Result(String, Nil),
-  b_dict: Dict(Int, String),
-  n: Int,
-  prev: Dict(Int, Int),
-  prev_prev: Dict(Int, Int),
-  j: Int,
-  curr: Dict(Int, Int),
-) -> Dict(Int, Int) {
-  case j > n {
-    True -> curr
-    False -> {
-      let bj = result.unwrap(dict.get(b_dict, j - 1), "")
-      let prev_above = result.unwrap(dict.get(prev, j), 0)
-      let prev_diag = result.unwrap(dict.get(prev, j - 1), 0)
-      let curr_left = result.unwrap(dict.get(curr, j - 1), 0)
-      let sub_cost = case ai == bj {
+type OsaRow(t) {
+  OsaRow(
+    item: t,
+    previous_a: Result(t, Nil),
+    previous_b: Result(t, Nil),
+    j: Int,
+  )
+}
+
+// `two_back` starts at column `j - 2` of row `i - 2` once `j >= 2`.
+fn osa_row(
+  state: OsaRow(t),
+  b: List(t),
+  previous_diagonal: Int,
+  previous_rest: List(Int),
+  two_back: List(Int),
+  left: Int,
+  acc: List(Int),
+) -> List(Int) {
+  case b, previous_rest {
+    [item_b, ..b_rest], [above, ..previous_more] -> {
+      let OsaRow(item:, previous_a:, previous_b:, j:) = state
+      let cost = case item == item_b {
         True -> 0
         False -> 1
       }
-      let v0 = min3(prev_above + 1, curr_left + 1, prev_diag + sub_cost)
-      let v1 = case j >= 2, prev_a {
-        True, Ok(pa) -> {
-          let prev_b = result.unwrap(dict.get(b_dict, j - 2), bj)
-          case ai == prev_b && pa == bj {
-            True -> {
-              let pp = result.unwrap(dict.get(prev_prev, j - 2), 0)
-              int.min(v0, pp + 1)
-            }
-            False -> v0
+      let best = min3(above + 1, left + 1, previous_diagonal + cost)
+      let #(best, two_back) = case j >= 2, two_back {
+        True, [diagonal_two_back, ..two_back_rest] -> {
+          let best = case previous_a, previous_b {
+            Ok(before_item), Ok(before_item_b)
+              if item == before_item_b && before_item == item_b
+            -> int.min(best, diagonal_two_back + 1)
+            _, _ -> best
           }
+          #(best, two_back_rest)
         }
-        _, _ -> v0
+        _, _ -> #(best, two_back)
       }
-      let new_curr = dict.insert(curr, j, v1)
-      osa_inner(ai, prev_a, b_dict, n, prev, prev_prev, j + 1, new_curr)
+      osa_row(
+        OsaRow(..state, previous_b: Ok(item_b), j: j + 1),
+        b_rest,
+        above,
+        previous_more,
+        two_back,
+        best,
+        [best, ..acc],
+      )
     }
+    _, _ -> list.reverse(acc)
   }
 }
 
@@ -417,25 +418,8 @@ fn count_diffs(a: List(String), b: List(String), acc: Int) -> Int {
 // Internal helpers
 // ---------------------------------------------------------------------
 
-fn list_to_dict(items: List(t)) -> Dict(Int, t) {
-  list_to_dict_loop(items, 0, dict.new())
-}
-
-fn list_to_dict_loop(
-  items: List(t),
-  i: Int,
-  acc: Dict(Int, t),
-) -> Dict(Int, t) {
-  case items {
-    [] -> acc
-    [x, ..rest] -> list_to_dict_loop(rest, i + 1, dict.insert(acc, i, x))
-  }
-}
-
-fn make_init_row(n: Int) -> Dict(Int, Int) {
-  int_range_inclusive(0, n)
-  |> list.index_map(fn(v, i) { #(i, v) })
-  |> dict.from_list
+fn last_or_zero(row: List(Int)) -> Int {
+  result.unwrap(list.last(row), 0)
 }
 
 fn int_range_inclusive(start: Int, end: Int) -> List(Int) {
@@ -455,8 +439,4 @@ fn int_range_inclusive_loop(
 
 fn min3(a: Int, b: Int, c: Int) -> Int {
   int.min(a, int.min(b, c))
-}
-
-fn min4(a: Int, b: Int, c: Int, d: Int) -> Int {
-  int.min(int.min(a, b), int.min(c, d))
 }

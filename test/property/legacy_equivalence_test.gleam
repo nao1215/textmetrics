@@ -179,3 +179,28 @@ pub fn sentences_matches_v0_9_0_test() {
     count.sentences(text) == v0_9_0.sentences(text)
   })
 }
+
+/// Longer words over three letters, for wide Jaro windows and many
+/// transpositions.
+fn long_word_generator() -> Generator(String) {
+  generator.list_of(
+    generator.element_of(["a", "b", "c"]),
+    range.constant(0, 40),
+  )
+  |> generator.map(string.concat)
+}
+
+pub fn distances_and_jaro_match_v0_9_0_on_long_words_test() {
+  metamon.forall_with(
+    config(),
+    generator.tuple2(long_word_generator(), long_word_generator()),
+    fn(pair) {
+      let #(a, b) = pair
+      let #(graphemes_a, graphemes_b) = #(nfc_graphemes(a), nfc_graphemes(b))
+      distance.damerau_levenshtein(a, b)
+      == v0_9_0.damerau_levenshtein(graphemes_a, graphemes_b)
+      && distance.osa(a, b) == v0_9_0.osa(graphemes_a, graphemes_b)
+      && similarity.jaro(a, b) == v0_9_0.jaro(graphemes_a, graphemes_b)
+    },
+  )
+}
