@@ -7,6 +7,18 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ## [Unreleased]
 
+### Fixed
+
+- `similarity.jaro_winkler_with` no longer returns scores above 1.0. The prefix that earns the bonus stops where `prefix_scale * prefix_length` would exceed 1.
+- `similarity.jaro_winkler` and `jaro_winkler_with` add the prefix bonus only when the Jaro similarity is above 0.7, as in Winkler's definition and in rapidfuzz and jellyfish. `jaro_winkler("abcxyz", "abcdef")` is now 0.6667 instead of 0.7667.
+- The `similarity` functions and `search.rank_jaro_winkler` normalise their inputs to NFC like `distance` does, so `"\u{00E9}"` and `"e\u{0301}"` compare as equal.
+- Unified diff headers remove CRLF from file names. A name containing `"\r\n"` used to break the header.
+- `count.words`, `count.characters`, `count.syllables` and the readability scores no longer count punctuation, symbols, emoji and Unicode spaces such as the em dash, the ellipsis, curly quotes and NBSP as letters or word characters.
+- `diff.patience` no longer overflows the JavaScript stack on deeply nested inputs, and finds its anchors in O(k log k).
+- `count.sentences` is linear on long dotted tokens such as URLs and version numbers; 40 KB of `"a."` took 13 seconds.
+- `lcs.sequence` uses O(n√m) memory instead of a full table, and `distance.damerau_levenshtein`, `distance.osa` and `similarity.jaro` no longer index a `Dict` per cell. Results are unchanged.
+- Several doc comments now match the code, including the cost of an edit script, which is the indel distance.
+
 ## [0.9.0] - 2026-11-19
 
 ### Changed
