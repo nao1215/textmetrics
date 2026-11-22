@@ -151,18 +151,17 @@ pub fn with_new_name_checked(
 // truncate the line for any POSIX C string consumer. Tabs are
 // folded into the same set because `diff -u` uses them to separate
 // the filename from the date stamp.
+// Filters by code point rather than grapheme: "\r\n" is a single
+// grapheme cluster and would slip through a grapheme-wise filter.
 fn sanitize_name(name: String) -> String {
-  string.to_graphemes(name)
-  |> list.filter(fn(g) {
-    case g {
-      "\n" -> False
-      "\r" -> False
-      "\u{0000}" -> False
-      "\t" -> False
+  string.to_utf_codepoints(name)
+  |> list.filter(fn(codepoint) {
+    case string.utf_codepoint_to_int(codepoint) {
+      0x0A | 0x0D | 0x00 | 0x09 -> False
       _ -> True
     }
   })
-  |> string.concat
+  |> string.from_utf_codepoints
 }
 
 fn validate_name(
