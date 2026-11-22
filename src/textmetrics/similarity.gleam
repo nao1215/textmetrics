@@ -12,7 +12,6 @@ import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
-import gleam/result
 import gleam/set.{type Set}
 import gleam/string
 import textmetrics/internal/unicode
@@ -150,9 +149,9 @@ pub fn sorensen_dice_trigrams(a: String, b: String) -> Float {
   }
 }
 
-/// Sørensen-Dice coefficient over grapheme n-grams of size `n`.
+/// Sørensen-Dice coefficient over grapheme n-grams of size `ngram_size`.
 ///
-/// Strict variant — surfaces `NgramSizeInvalid` for `n < 1`. For the
+/// Strict variant — surfaces `NgramSizeInvalid` for `ngram_size < 1`. For the
 /// common case of bigrams or trigrams over user-controlled `a` and
 /// `b`, prefer the lenient siblings
 /// [`sorensen_dice_bigrams`](#sorensen_dice_bigrams) and
@@ -166,32 +165,30 @@ pub fn sorensen_dice_trigrams(a: String, b: String) -> Float {
 ///   otherwise.
 /// - When exactly one input has no n-grams the score is `Ok(0.0)`
 ///   (no overlap is possible).
-/// - `n < 1` returns `Error(NgramSizeInvalid(n))`.
+/// - `ngram_size < 1` returns `Error(NgramSizeInvalid(ngram_size))`.
 pub fn sorensen_dice(
   a: String,
   b: String,
-  n: Int,
+  ngram_size: Int,
 ) -> Result(Float, SorensenDiceError) {
-  case n < 1 {
-    True -> Error(NgramSizeInvalid(n))
+  case ngram_size < 1 {
+    True -> Error(NgramSizeInvalid(ngram_size))
     False -> {
       let a_graphemes = nfc_graphemes(a)
       let b_graphemes = nfc_graphemes(b)
-      let ngs_a = build_ngrams(a_graphemes, n)
-      let ngs_b = build_ngrams(b_graphemes, n)
-      let total_a = list.length(ngs_a)
-      let total_b = list.length(ngs_b)
-      case total_a + total_b {
+      let a_ngrams = build_ngrams(a_graphemes, ngram_size)
+      let b_ngrams = build_ngrams(b_graphemes, ngram_size)
+      case list.length(a_ngrams) + list.length(b_ngrams) {
         0 ->
           case a_graphemes == b_graphemes {
             True -> Ok(1.0)
             False -> Ok(0.0)
           }
-        denom -> {
-          let multiset_a = list.fold(ngs_a, dict.new(), increment_count)
-          let multiset_b = list.fold(ngs_b, dict.new(), increment_count)
-          let inter = intersection_size(multiset_a, multiset_b)
-          Ok(int.to_float(2 * inter) /. int.to_float(denom))
+        total -> {
+          let a_multiset = list.fold(a_ngrams, dict.new(), increment_count)
+          let b_multiset = list.fold(b_ngrams, dict.new(), increment_count)
+          let shared = intersection_size(a_multiset, b_multiset)
+          Ok(int.to_float(2 * shared) /. int.to_float(total))
         }
       }
     }
@@ -329,61 +326,23 @@ fn common_prefix_length(
 // Sørensen-Dice internals
 // ---------------------------------------------------------------------
 
-fn build_ngrams(gs: List(String), n: Int) -> List(String) {
-  let len = list.length(gs)
-  case len < n {
-    True -> []
-    False -> {
-      let arr = list_to_dict(gs)
-      build_ngrams_loop(arr, n, len, 0, [])
-    }
-  }
-}
-
-fn build_ngrams_loop(
-  arr: Dict(Int, String),
-  n: Int,
-  len: Int,
-  i: Int,
-  acc: List(String),
-) -> List(String) {
-  case i + n > len {
-    True -> list.reverse(acc)
-    False -> {
-      let ngram = build_ngram_at(arr, i, n, [])
-      build_ngrams_loop(arr, n, len, i + 1, [ngram, ..acc])
-    }
-  }
-}
-
-fn build_ngram_at(
-  arr: Dict(Int, String),
-  start: Int,
-  count: Int,
-  acc: List(String),
-) -> String {
-  case count {
-    0 -> list.reverse(acc) |> string.concat
-    _ -> {
-      let g = result.unwrap(dict.get(arr, start), "")
-      build_ngram_at(arr, start + 1, count - 1, [g, ..acc])
-    }
-  }
+fn build_ngrams(graphemes: List(String), size: Int) -> List(String) {
+  list.window(graphemes, by: size) |> list.map(string.concat)
 }
 
 fn increment_count(acc: Dict(String, Int), key: String) -> Dict(String, Int) {
-  dict.upsert(acc, key, fn(opt) {
-    case opt {
-      Some(c) -> c + 1
+  dict.upsert(acc, key, fn(existing) {
+    case existing {
+      Some(count) -> count + 1
       None -> 1
     }
   })
 }
 
 fn intersection_size(a: Dict(String, Int), b: Dict(String, Int)) -> Int {
-  dict.fold(a, 0, fn(acc, key, ca) {
+  dict.fold(a, 0, fn(acc, key, count_a) {
     case dict.get(b, key) {
-      Ok(cb) -> acc + int.min(ca, cb)
+      Ok(count_b) -> acc + int.min(count_a, count_b)
       Error(_) -> acc
     }
   })
@@ -395,19 +354,4 @@ fn intersection_size(a: Dict(String, Int), b: Dict(String, Int)) -> Int {
 
 fn nfc_graphemes(text: String) -> List(String) {
   string.to_graphemes(unicode.to_nfc(text))
-}
-
-fn list_to_dict(items: List(t)) -> Dict(Int, t) {
-  list_to_dict_loop(items, 0, dict.new())
-}
-
-fn list_to_dict_loop(
-  items: List(t),
-  i: Int,
-  acc: Dict(Int, t),
-) -> Dict(Int, t) {
-  case items {
-    [] -> acc
-    [x, ..rest] -> list_to_dict_loop(rest, i + 1, dict.insert(acc, i, x))
-  }
 }

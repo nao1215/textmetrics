@@ -15,6 +15,7 @@
 //// whitespace stays one word; non-English text in
 //// [`syllables_in_word`](#syllables_in_word) returns `1`.
 
+import gleam/int
 import gleam/list
 import gleam/string
 
@@ -432,7 +433,7 @@ fn syllables_from_letters(letters: List(String)) -> Int {
     True -> vowel_groups - 1
     False -> vowel_groups
   }
-  max_int(with_silent_e, 1)
+  int.max(with_silent_e, 1)
 }
 
 fn count_vowel_groups(
@@ -457,56 +458,25 @@ fn count_vowel_groups(
 fn is_vowel_letter(g: String, at_start: Bool) -> Bool {
   case g {
     "a" | "e" | "i" | "o" | "u" -> True
-    // Latin-1 accented vowels (Issue #20). The lower-case forms cover
-    // input because the count pipeline lowercases letters before this
-    // check, but the upper-case set is included for callers that
-    // bypass that pipeline.
+    // Latin-1 accented vowels (Issue #20). Callers lowercase first.
     "à" | "á" | "â" | "ã" | "ä" | "å" | "ā" | "ă" | "ą" -> True
     "è" | "é" | "ê" | "ë" | "ē" | "ĕ" | "ė" | "ę" | "ě" -> True
     "ì" | "í" | "î" | "ï" | "ĩ" | "ī" | "ĭ" | "į" -> True
     "ò" | "ó" | "ô" | "õ" | "ö" | "ø" | "ō" | "ŏ" | "ő" -> True
     "ù" | "ú" | "û" | "ü" | "ũ" | "ū" | "ŭ" | "ů" | "ű" | "ų" -> True
     "ý" | "ÿ" -> True
-    "À" | "Á" | "Â" | "Ã" | "Ä" | "Å" | "Ā" | "Ă" | "Ą" -> True
-    "È" | "É" | "Ê" | "Ë" | "Ē" | "Ĕ" | "Ė" | "Ę" | "Ě" -> True
-    "Ì" | "Í" | "Î" | "Ï" | "Ĩ" | "Ī" | "Ĭ" | "Į" -> True
-    "Ò" | "Ó" | "Ô" | "Õ" | "Ö" | "Ø" | "Ō" | "Ŏ" | "Ő" -> True
-    "Ù" | "Ú" | "Û" | "Ü" | "Ũ" | "Ū" | "Ŭ" | "Ů" | "Ű" | "Ų" -> True
-    "Ý" | "Ÿ" -> True
-    "y" | "Y" ->
-      case at_start {
-        True -> False
-        False -> True
-      }
+    "y" -> !at_start
     _ -> False
   }
 }
 
 fn ends_with_silent_e(letters: List(String)) -> Bool {
   case last_three(letters) {
-    // "...Cle" (consonant + l + e) is a syllabic consonant-l-e pattern
-    // (e.g. "syllable", "readable", "table"). The trailing `e` is NOT
-    // silent — it contributes the schwa of the final /-əl/ syllable.
-    [c, "l", "e"] ->
-      case is_vowel_letter(c, False) {
-        True -> {
-          // "...Vle" — the vowel before 'l' already counted the
-          // syllable, so the 'e' here IS silent.
-          True
-        }
-        False -> False
-      }
-    [_, prev, "e"] ->
-      case is_vowel_letter(prev, False) {
-        True -> False
-        False -> True
-      }
-    [prev, "e"] ->
-      case is_vowel_letter(prev, False) {
-        True -> False
-        False -> True
-      }
-    ["e"] -> False
+    // "...Cle" (consonant + l + e, as in "syllable" or "table") ends in
+    // the syllable /-əl/, so the `e` is not silent. After a vowel
+    // ("...Vle") the vowel already counted, so it is.
+    [before_l, "l", "e"] -> is_vowel_letter(before_l, False)
+    [_, previous, "e"] | [previous, "e"] -> !is_vowel_letter(previous, False)
     _ -> False
   }
 }
@@ -521,13 +491,6 @@ fn last_three(items: List(String)) -> List(String) {
         [a, b, c] -> [a, b, c]
         _ -> last_three(rest)
       }
-  }
-}
-
-fn max_int(a: Int, b: Int) -> Int {
-  case a > b {
-    True -> a
-    False -> b
   }
 }
 
