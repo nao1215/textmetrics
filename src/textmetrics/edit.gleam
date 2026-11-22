@@ -80,9 +80,8 @@ fn do_recover_new(script: EditScript(a), acc: List(a)) -> List(a) {
 
 /// Total number of `Insert` and `Delete` operations in `script`.
 ///
-/// For an optimal Myers diff this equals
-/// `distance.levenshtein_list(old, new)` with substitution counted as
-/// one insert plus one delete.
+/// For an optimal Myers diff this equals the indel distance
+/// `list.length(old) + list.length(new) - 2 * lcs.length(old, new)`.
 pub fn cost(script: EditScript(a)) -> Int {
   do_cost(script, 0)
 }
@@ -125,7 +124,7 @@ fn take_while_equal(
 ) -> #(List(a), EditScript(a)) {
   case script {
     [Equal(item), ..rest] -> take_while_equal(rest, [item, ..acc])
-    _ -> #(list.reverse(acc), script)
+    [Insert(_), ..] | [Delete(_), ..] | [] -> #(list.reverse(acc), script)
   }
 }
 
@@ -135,7 +134,7 @@ fn take_while_insert(
 ) -> #(List(a), EditScript(a)) {
   case script {
     [Insert(item), ..rest] -> take_while_insert(rest, [item, ..acc])
-    _ -> #(list.reverse(acc), script)
+    [Equal(_), ..] | [Delete(_), ..] | [] -> #(list.reverse(acc), script)
   }
 }
 
@@ -145,6 +144,6 @@ fn take_while_delete(
 ) -> #(List(a), EditScript(a)) {
   case script {
     [Delete(item), ..rest] -> take_while_delete(rest, [item, ..acc])
-    _ -> #(list.reverse(acc), script)
+    [Equal(_), ..] | [Insert(_), ..] | [] -> #(list.reverse(acc), script)
   }
 }

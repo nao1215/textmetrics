@@ -1,6 +1,6 @@
 //// Convenience helpers for spell-correction-style search built on
-//// [`distance`](textmetrics/distance.html) and
-//// [`similarity`](textmetrics/similarity.html).
+//// [`distance`](./distance.html) and
+//// [`similarity`](./similarity.html).
 ////
 //// Both functions are deterministic: ties are broken by the
 //// candidates' original input order.
@@ -10,7 +10,10 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
+import gleam/string
 import textmetrics/distance
+import textmetrics/internal/jaro
+import textmetrics/internal/unicode
 import textmetrics/similarity
 
 /// A scored candidate produced by [`rank_jaro_winkler`](#rank_jaro_winkler).
@@ -49,24 +52,20 @@ pub fn did_you_mean(
   candidates: List(String),
   max_distance: Int,
 ) -> List(String) {
+  // The query is normalised and split once, not once per candidate.
+  let query_graphemes = nfc_graphemes(query)
   candidates
-  |> list.index_map(fn(c, i) { #(c, distance.levenshtein(query, c), i) })
-  |> list.filter(fn(t) {
-    let #(_, d, _) = t
-    d <= max_distance
+  |> list.index_map(fn(candidate, index) {
+    let distance =
+      distance.levenshtein_list(query_graphemes, nfc_graphemes(candidate))
+    #(candidate, distance, index)
   })
-  |> list.sort(by: fn(a, b) {
-    let #(_, da, ia) = a
-    let #(_, db, ib) = b
-    case int.compare(da, db) {
-      order.Eq -> int.compare(ia, ib)
-      o -> o
-    }
+  |> list.filter(fn(scored) { scored.1 <= max_distance })
+  |> list.sort(by: fn(left, right) {
+    int.compare(left.1, right.1)
+    |> order.break_tie(int.compare(left.2, right.2))
   })
-  |> list.map(fn(t) {
-    let #(c, _, _) = t
-    c
-  })
+  |> list.map(fn(scored) { scored.0 })
 }
 
 /// Single closest candidate within `max_distance` Levenshtein
@@ -112,19 +111,29 @@ pub fn rank_jaro_winkler(
   candidates: List(String),
   top_n: Int,
 ) -> List(Ranked) {
+  let query_graphemes = nfc_graphemes(query)
+  let config = similarity.default_jaro_winkler_config()
+  let prefix_scale = similarity.prefix_scale(config)
+  let prefix_max = similarity.prefix_max(config)
   candidates
-  |> list.index_map(fn(c, i) { #(c, similarity.jaro_winkler(query, c), i) })
-  |> list.sort(by: fn(a, b) {
-    let #(_, sa, ia) = a
-    let #(_, sb, ib) = b
-    case float.compare(sb, sa) {
-      order.Eq -> int.compare(ia, ib)
-      o -> o
-    }
+  |> list.index_map(fn(candidate, index) {
+    let score =
+      jaro.jaro_winkler(
+        query_graphemes,
+        nfc_graphemes(candidate),
+        prefix_scale,
+        prefix_max,
+      )
+    #(candidate, score, index)
+  })
+  |> list.sort(by: fn(left, right) {
+    float.compare(right.1, left.1)
+    |> order.break_tie(int.compare(left.2, right.2))
   })
   |> list.take(top_n)
-  |> list.map(fn(t) {
-    let #(c, s, _) = t
-    Ranked(label: c, score: s)
-  })
+  |> list.map(fn(scored) { Ranked(label: scored.0, score: scored.1) })
+}
+
+fn nfc_graphemes(text: String) -> List(String) {
+  string.to_graphemes(unicode.to_nfc(text))
 }

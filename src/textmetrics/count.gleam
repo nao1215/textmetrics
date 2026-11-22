@@ -4,7 +4,8 @@
 ////
 //// Functions in this module are pure, deterministic, and `O(n)` in
 //// the length of their input. They iterate over **extended grapheme
-//// clusters** (via `gleam/string.to_graphemes`), not raw bytes, so
+//// clusters** (via `gleam/string.to_graphemes`) of the input
+//// normalised to Unicode Normalization Form C (NFC), not raw bytes, so
 //// `"naïve"` is 5 graphemes and 1 word regardless of whether the
 //// diacritic is encoded as a single codepoint or `a` + combining
 //// mark.
@@ -15,19 +16,22 @@
 //// whitespace stays one word; non-English text in
 //// [`syllables_in_word`](#syllables_in_word) returns `1`.
 
+import gleam/int
 import gleam/list
 import gleam/string
+import textmetrics/internal/unicode
+import textmetrics/internal/unicode_category
 
 // --- words --------------------------------------------------------------
 
 /// Count words. A word is a maximal run of "letter-like" graphemes
 /// separated by whitespace or punctuation.
 ///
-/// A grapheme counts as letter-like when its first code point is an
-/// ASCII letter (`a-z` / `A-Z`), an ASCII digit, or any non-ASCII
-/// character (covering Latin-1 letters, CJK ideographs, accented
-/// letters delivered as a single grapheme, etc.). Whitespace and
-/// ASCII punctuation are word boundaries.
+/// A grapheme counts as letter-like when its first code point is a
+/// letter, mark, decimal digit or letter number of any script
+/// (General_Category L, M, Nd or Nl). Whitespace, punctuation, symbols,
+/// other numbers (`①`, `²`) and emoji, including keycaps such as
+/// `1️⃣`, are word boundaries.
 ///
 /// Examples:
 ///
@@ -39,7 +43,7 @@ import gleam/string
 /// count.words("hello   world") // 2 (whitespace collapses)
 /// ```
 pub fn words(text: String) -> Int {
-  let graphemes = string.to_graphemes(text)
+  let graphemes = nfc_graphemes(text)
   count_runs(graphemes, False, 0)
 }
 
@@ -62,9 +66,9 @@ fn count_runs(items: List(String), in_run: Bool, acc: Int) -> Int {
 fn is_letter_like(g: String) -> Bool {
   case string.to_utf_codepoints(g) {
     [] -> False
-    [cp, ..] -> {
-      let n = string.utf_codepoint_to_int(cp)
-      is_letter_like_code(n)
+    [first, ..rest] -> {
+      let code = string.utf_codepoint_to_int(first)
+      is_letter_like_code(code) && !is_emoji_sequence(code, rest)
     }
   }
 }
@@ -76,15 +80,29 @@ fn is_letter_like_code(n: Int) -> Bool {
     _ if n >= 0x61 && n <= 0x7a -> True
     // ASCII digits
     _ if n >= 0x30 && n <= 0x39 -> True
-    // Anything above ASCII — Latin-1 letters, CJK, accented graphemes
-    _ if n >= 0x80 -> True
-    _ -> False
+    _ if n < 0x80 -> False
+    _ -> !unicode_category.is_non_letter(n)
   }
+}
+
+// A keycap (`1️⃣`, U+20E3) or an ASCII character in emoji presentation
+// (`9` + U+FE0F) is an emoji, not a digit.
+fn is_emoji_sequence(first: Int, rest: List(UtfCodepoint)) -> Bool {
+  list.any(rest, fn(codepoint) {
+    let code = string.utf_codepoint_to_int(codepoint)
+    code == 0x20e3 || { first < 0x80 && code == 0xfe0f }
+  })
+}
+
+fn nfc_graphemes(text: String) -> List(String) {
+  string.to_graphemes(unicode.to_nfc(text))
 }
 
 // --- sentences -----------------------------------------------------------
 
-/// Count sentences. Sentence terminators are `.`, `!`, `?`. A run of
+/// Count sentences. Sentence terminators are `.`, `!`, `?`, `…`, the
+/// ideographic and full-width `。` `．` `！` `？`, and the Devanagari
+/// dandas `।` `॥`. A run of
 /// consecutive terminators counts as one boundary (so `"What?!"` is
 /// one sentence). A trailing non-empty fragment that lacks a
 /// terminator still counts as a sentence (`"hello"` → 1).
@@ -105,10 +123,10 @@ fn is_letter_like_code(n: Int) -> Bool {
 ///
 /// Empty input returns `0`.
 pub fn sentences(text: String) -> Int {
-  let graphemes = string.to_graphemes(text)
+  let graphemes = nfc_graphemes(text)
   case has_non_whitespace(graphemes) {
     False -> 0
-    True -> sentence_loop(graphemes, False, False, [], 0)
+    True -> sentence_loop(graphemes, False, False, empty_word, 0)
   }
 }
 
@@ -116,7 +134,7 @@ fn sentence_loop(
   items: List(String),
   saw_content: Bool,
   in_terminator: Bool,
-  current_word: List(String),
+  current_word: Word,
   acc: Int,
 ) -> Int {
   case items {
@@ -154,8 +172,8 @@ fn sentence_loop(
           let next_word = case suppress {
             // Keep the abbreviation token attached to the period so
             // multi-period abbreviations like "e.g." chain correctly.
-            True -> [".", ..current_word]
-            False -> []
+            True -> push_period(current_word)
+            False -> empty_word
           }
           sentence_loop(
             rest,
@@ -165,9 +183,9 @@ fn sentence_loop(
             next_acc,
           )
         }
-        False, True -> sentence_loop(rest, saw_content, False, [], acc)
+        False, True -> sentence_loop(rest, saw_content, False, empty_word, acc)
         False, False ->
-          sentence_loop(rest, True, False, [g, ..current_word], acc)
+          sentence_loop(rest, True, False, push_grapheme(current_word, g), acc)
       }
     }
   }
@@ -175,32 +193,95 @@ fn sentence_loop(
 
 fn is_terminator(g: String) -> Bool {
   case g {
-    "." | "!" | "?" -> True
+    "." | "!" | "?" | "…" | "。" | "．" | "！" | "？" | "।" | "॥" -> True
     _ -> False
   }
 }
 
-/// `reversed_word` is the token before the period, graphemes reversed,
-/// with the periods of a multi-period abbreviation kept in it (`"p.m"`
-/// for the second period of `p.m.`). `rest` is the text after it.
-fn period_continues_sentence(
-  reversed_word: List(String),
-  rest: List(String),
-) -> Bool {
-  let word =
-    reversed_word
-    |> list.reverse
-    |> string.concat
-    |> string.lowercase
-  case rest {
+// What the abbreviation checks need to know about the token before a
+// period (with the periods of a multi-period abbreviation kept in it,
+// `p.m` for the second period of `p.m.`), kept in constant space so that
+// long dotted tokens stay linear.
+type Word {
+  Word(
+    // The graphemes in reverse order, while the token is no longer than
+    // the longest abbreviation.
+    reversed_start: List(String),
+    length: Int,
+    periods: Int,
+    // Graphemes since the last period.
+    part_length: Int,
+    // Every part so far is one or two ASCII letters (the current one may
+    // still be empty).
+    parts_are_short_letters: Bool,
+  )
+}
+
+const empty_word =
+  Word(
+    reversed_start: [],
+    length: 0,
+    periods: 0,
+    part_length: 0,
+    parts_are_short_letters: True,
+  )
+
+const longest_abbreviation = 5
+
+fn push_grapheme(word: Word, g: String) -> Word {
+  Word(
+    reversed_start: push_start(word, g),
+    length: word.length + 1,
+    periods: word.periods,
+    part_length: word.part_length + 1,
+    parts_are_short_letters: word.parts_are_short_letters
+      && word.part_length < 2
+      && is_ascii_letter(string.lowercase(g)),
+  )
+}
+
+fn push_period(word: Word) -> Word {
+  Word(
+    reversed_start: push_start(word, "."),
+    length: word.length + 1,
+    periods: word.periods + 1,
+    part_length: 0,
+    parts_are_short_letters: word.parts_are_short_letters
+      && word.part_length >= 1,
+  )
+}
+
+fn push_start(word: Word, g: String) -> List(String) {
+  case word.length < longest_abbreviation {
+    True -> [g, ..word.reversed_start]
+    False -> word.reversed_start
+  }
+}
+
+/// `rest` is the text after the period.
+fn period_continues_sentence(word: Word, rest: List(String)) -> Bool {
+  let next_is_letter_like = case rest {
     [next, ..] -> is_letter_like(next)
     [] -> False
   }
+  next_is_letter_like
   || is_abbreviation(word)
   || { is_multi_period_abbreviation(word) && !starts_capitalised(rest) }
 }
 
-fn is_abbreviation(word: String) -> Bool {
+fn is_abbreviation(word: Word) -> Bool {
+  case word.length <= longest_abbreviation {
+    False -> False
+    True ->
+      word.reversed_start
+      |> list.reverse
+      |> string.concat
+      |> string.lowercase
+      |> is_abbreviation_text
+  }
+}
+
+fn is_abbreviation_text(word: String) -> Bool {
   case word {
     "mr" | "mrs" | "ms" | "dr" | "prof" | "jr" | "sr" | "st" -> True
     "vs" | "etc" | "no" | "co" | "inc" | "ltd" | "fig" | "vol" | "ch" -> True
@@ -217,16 +298,8 @@ fn is_abbreviation(word: String) -> Bool {
 
 /// Two or more one- or two-letter parts joined by periods: `e.g`, `a.m`,
 /// `u.s.a`, `ph.d`.
-fn is_multi_period_abbreviation(word: String) -> Bool {
-  case string.split(word, on: ".") {
-    [_] -> False
-    parts ->
-      list.all(parts, fn(part) {
-        let letters = string.to_graphemes(part)
-        let length = list.length(letters)
-        length >= 1 && length <= 2 && list.all(letters, is_ascii_letter)
-      })
-  }
+fn is_multi_period_abbreviation(word: Word) -> Bool {
+  word.periods >= 1 && word.parts_are_short_letters && word.part_length >= 1
 }
 
 fn starts_capitalised(rest: List(String)) -> Bool {
@@ -237,9 +310,24 @@ fn starts_capitalised(rest: List(String)) -> Bool {
   }
 }
 
+// Unicode white space (`White_Space=yes`). Checks every code point, so
+// the single grapheme "\r\n" is whitespace too.
 fn is_whitespace(g: String) -> Bool {
-  case g {
-    " " | "\t" | "\n" | "\r" | "\u{00A0}" -> True
+  case string.to_utf_codepoints(g) {
+    [] -> False
+    codepoints ->
+      list.all(codepoints, fn(codepoint) {
+        is_whitespace_code(string.utf_codepoint_to_int(codepoint))
+      })
+  }
+}
+
+fn is_whitespace_code(n: Int) -> Bool {
+  case n {
+    0x20 | 0x85 | 0xa0 | 0x1680 | 0x2028 | 0x2029 | 0x202f | 0x205f | 0x3000 ->
+      True
+    _ if n >= 0x09 && n <= 0x0d -> True
+    _ if n >= 0x2000 && n <= 0x200a -> True
     _ -> False
   }
 }
@@ -260,11 +348,12 @@ fn has_non_whitespace(items: List(String)) -> Bool {
 /// Count syllables in a single word using an English heuristic:
 ///
 /// 1. Lowercase the word.
-/// 2. Strip non-ASCII-letter graphemes.
-/// 3. Count maximal vowel groups in `a e i o u y`, with `y` only
-///    counting at non-initial position.
+/// 2. Keep only ASCII letters and accented Latin vowels (`é`, `ü`, ...).
+/// 3. Count maximal vowel groups in `a e i o u y` and the accented
+///    vowels, with `y` only counting at non-initial position.
 /// 4. Subtract one if the word ends in a silent `e` (the preceding
-///    letter being a consonant).
+///    letter being a consonant), except after consonant + `l`
+///    (`table`, `syllable`).
 /// 5. Floor at `1`.
 ///
 /// Examples:
@@ -276,9 +365,13 @@ fn has_non_whitespace(items: List(String)) -> Bool {
 /// count.syllables_in_word("rhythm")    // 1 (no vowels, floors at 1)
 /// ```
 ///
-/// Returns `0` for an empty input. Returns `1` for non-English words
-/// that contain no ASCII letters.
+/// Returns `0` for an empty input. Returns `1` for any other input with
+/// none of the letters kept in step 2 (`"123"`, `"日本"`).
 pub fn syllables_in_word(word: String) -> Int {
+  word_syllables(unicode.to_nfc(word))
+}
+
+fn word_syllables(word: String) -> Int {
   let lowered = string.lowercase(word)
   let letters =
     lowered
@@ -328,7 +421,7 @@ fn syllables_from_letters(letters: List(String)) -> Int {
     True -> vowel_groups - 1
     False -> vowel_groups
   }
-  max_int(with_silent_e, 1)
+  int.max(with_silent_e, 1)
 }
 
 fn count_vowel_groups(
@@ -353,56 +446,25 @@ fn count_vowel_groups(
 fn is_vowel_letter(g: String, at_start: Bool) -> Bool {
   case g {
     "a" | "e" | "i" | "o" | "u" -> True
-    // Latin-1 accented vowels (Issue #20). The lower-case forms cover
-    // input because the count pipeline lowercases letters before this
-    // check, but the upper-case set is included for callers that
-    // bypass that pipeline.
+    // Latin-1 accented vowels (Issue #20). Callers lowercase first.
     "à" | "á" | "â" | "ã" | "ä" | "å" | "ā" | "ă" | "ą" -> True
     "è" | "é" | "ê" | "ë" | "ē" | "ĕ" | "ė" | "ę" | "ě" -> True
     "ì" | "í" | "î" | "ï" | "ĩ" | "ī" | "ĭ" | "į" -> True
     "ò" | "ó" | "ô" | "õ" | "ö" | "ø" | "ō" | "ŏ" | "ő" -> True
     "ù" | "ú" | "û" | "ü" | "ũ" | "ū" | "ŭ" | "ů" | "ű" | "ų" -> True
     "ý" | "ÿ" -> True
-    "À" | "Á" | "Â" | "Ã" | "Ä" | "Å" | "Ā" | "Ă" | "Ą" -> True
-    "È" | "É" | "Ê" | "Ë" | "Ē" | "Ĕ" | "Ė" | "Ę" | "Ě" -> True
-    "Ì" | "Í" | "Î" | "Ï" | "Ĩ" | "Ī" | "Ĭ" | "Į" -> True
-    "Ò" | "Ó" | "Ô" | "Õ" | "Ö" | "Ø" | "Ō" | "Ŏ" | "Ő" -> True
-    "Ù" | "Ú" | "Û" | "Ü" | "Ũ" | "Ū" | "Ŭ" | "Ů" | "Ű" | "Ų" -> True
-    "Ý" | "Ÿ" -> True
-    "y" | "Y" ->
-      case at_start {
-        True -> False
-        False -> True
-      }
+    "y" -> !at_start
     _ -> False
   }
 }
 
 fn ends_with_silent_e(letters: List(String)) -> Bool {
   case last_three(letters) {
-    // "...Cle" (consonant + l + e) is a syllabic consonant-l-e pattern
-    // (e.g. "syllable", "readable", "table"). The trailing `e` is NOT
-    // silent — it contributes the schwa of the final /-əl/ syllable.
-    [c, "l", "e"] ->
-      case is_vowel_letter(c, False) {
-        True -> {
-          // "...Vle" — the vowel before 'l' already counted the
-          // syllable, so the 'e' here IS silent.
-          True
-        }
-        False -> False
-      }
-    [_, prev, "e"] ->
-      case is_vowel_letter(prev, False) {
-        True -> False
-        False -> True
-      }
-    [prev, "e"] ->
-      case is_vowel_letter(prev, False) {
-        True -> False
-        False -> True
-      }
-    ["e"] -> False
+    // "...Cle" (consonant + l + e, as in "syllable" or "table") ends in
+    // the syllable /-əl/, so the `e` is not silent. After a vowel
+    // ("...Vle") the vowel already counted, so it is.
+    [before_l, "l", "e"] -> is_vowel_letter(before_l, False)
+    [_, previous, "e"] | [previous, "e"] -> !is_vowel_letter(previous, False)
     _ -> False
   }
 }
@@ -420,18 +482,11 @@ fn last_three(items: List(String)) -> List(String) {
   }
 }
 
-fn max_int(a: Int, b: Int) -> Int {
-  case a > b {
-    True -> a
-    False -> b
-  }
-}
-
 /// Count syllables in `text`. Sums [`syllables_in_word`](#syllables_in_word)
 /// over each word found by [`words`](#words).
 pub fn syllables(text: String) -> Int {
-  word_chunks(string.to_graphemes(text), [], [])
-  |> list.fold(0, fn(acc, w) { acc + syllables_in_word(w) })
+  word_chunks(nfc_graphemes(text), [], [])
+  |> list.fold(0, fn(acc, w) { acc + word_syllables(w) })
 }
 
 fn word_chunks(
@@ -467,10 +522,9 @@ fn finish(chunk: List(String)) -> String {
 // --- characters / polysyllables / paragraphs ----------------------------
 
 /// Count characters that contribute to readability formulas: ASCII
-/// letters plus ASCII digits, **excluding** whitespace and ASCII
-/// punctuation. Non-ASCII graphemes that look letter-like (Latin-1
-/// accents, CJK ideographs) also count, mirroring the behaviour of
-/// `textstat`'s `char_count`.
+/// letters plus ASCII digits, **excluding** whitespace, punctuation,
+/// symbols, other numbers and emoji. Letters, marks and digits of other
+/// scripts (Latin-1 accents, CJK ideographs) also count.
 ///
 /// Examples:
 ///
@@ -480,7 +534,7 @@ fn finish(chunk: List(String)) -> String {
 /// ```
 pub fn characters(text: String) -> Int {
   text
-  |> string.to_graphemes
+  |> nfc_graphemes
   |> list.fold(0, fn(acc, g) {
     case is_letter_like(g) {
       True -> acc + 1
@@ -489,14 +543,13 @@ pub fn characters(text: String) -> Int {
   })
 }
 
-/// Count words with three or more syllables in `text`. This is the
-/// "polysyllable" count consumed by SMOG with **no** exclusions; the
-/// stricter Gunning-Fog "complex word" count is computed inline
-/// inside [`readability.gunning_fog`](./readability.html#gunning_fog).
+/// Count words with three or more syllables in `text`. SMOG and
+/// [`readability.gunning_fog`](./readability.html#gunning_fog) both use
+/// this count with **no** exclusions.
 pub fn polysyllables(text: String) -> Int {
-  word_chunks(string.to_graphemes(text), [], [])
+  word_chunks(nfc_graphemes(text), [], [])
   |> list.fold(0, fn(acc, w) {
-    case syllables_in_word(w) >= 3 {
+    case word_syllables(w) >= 3 {
       True -> acc + 1
       False -> acc
     }

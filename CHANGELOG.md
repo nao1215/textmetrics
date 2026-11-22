@@ -7,6 +7,24 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ## [Unreleased]
 
+### Changed
+
+- Jaro-Winkler scores change: `similarity.jaro_winkler`, `jaro_winkler_with` and `search.rank_jaro_winkler` add the prefix bonus only when the Jaro similarity is above 0.7, as in Winkler's definition and in rapidfuzz and jellyfish. `jaro_winkler("abcxyz", "abcdef")` is now 0.6667 instead of 0.7667, so fixed thresholds may match different pairs.
+- `count` and the readability scores count a grapheme as a letter only when its first code point is a letter, mark or decimal or letter number (General_Category L, M, Nd or Nl, Unicode 15.1). Punctuation and symbols of every script (`—`, `…`, `・`, `™`, `،`), other numbers such as `①`, `²` and `½`, keycap emoji and spaces such as NBSP are separators and are not counted by `characters`.
+- `count` normalises its input to NFC, so `"cafe\u{0301}"` has as many syllables as `"café"`.
+- `count.sentences` also ends a sentence at `…`, `。`, `．`, `！`, `？`, `।` and `॥`. Abbreviation rules such as `Mr.` still apply to the ASCII `.` only.
+
+### Fixed
+
+- `similarity.jaro_winkler_with` no longer returns scores above 1.0. The prefix that earns the bonus stops where `prefix_scale * prefix_length` would exceed 1.
+- The `similarity` functions and `search.rank_jaro_winkler` normalise their inputs to NFC like `distance` does, so `"\u{00E9}"` and `"e\u{0301}"` compare as equal.
+- Unified diff headers remove CRLF from file names. A name containing `"\r\n"` used to break the header.
+- `diff.patience` no longer overflows the JavaScript stack on deeply nested inputs, and finds its anchors in O(k log² k) instead of O(k²).
+- `count.sentences` is linear on long dotted tokens such as URLs and version numbers; 40 KB of `"a."` took 13 seconds.
+- `lcs.sequence` uses O(n√m) memory instead of a full table, and `distance.damerau_levenshtein`, `distance.osa` and `similarity.jaro` no longer index a `Dict` per cell. Results are unchanged.
+- `search.did_you_mean` and `search.rank_jaro_winkler` normalise and split the query once per call instead of once per candidate.
+- Several doc comments now match the code, including the cost of an edit script, which is the indel distance.
+
 ## [0.9.0] - 2026-11-19
 
 ### Changed

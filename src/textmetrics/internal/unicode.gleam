@@ -11,10 +11,9 @@
 /// Both runtimes ship NFC tables, so callers do not need an extra
 /// dependency.
 ///
-/// Distance and similarity functions call this on their inputs so
-/// that canonically-equivalent strings (`"\u{00C1}"` vs
-/// `"A\u{0301}"`) compare as equal, which matches the README's
-/// "operates on Unicode grapheme clusters (UAX #29)" contract.
+/// The string functions of `distance`, `similarity` and `count` call this on
+/// their inputs so that canonically-equivalent strings (`"\u{00C1}"`
+/// vs `"A\u{0301}"`) compare as equal.
 @external(erlang, "textmetrics_ffi", "to_nfc")
 @external(javascript, "../../textmetrics_ffi.mjs", "to_nfc")
 pub fn to_nfc(s: String) -> String

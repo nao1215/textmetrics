@@ -7,24 +7,18 @@
 //// pure, deterministic, and `O(n)` in input length.
 ////
 //// Returned scores are `Float` values; callers should round or
-//// quantise to fit their reporting needs. Empty or extremely small
-//// inputs return [`ReadabilityError`](#ReadabilityError) instead of
-//// non-finite numbers.
+//// quantise to fit their reporting needs. Input with no words returns
+//// [`TooFewWords`](#ReadabilityError) instead of a non-finite number.
 ////
 //// The syllable counter consumed by these formulas is an
 //// English-tuned heuristic (see
 //// [`count.syllables_in_word`](./count.html#syllables_in_word)).
-//// Non-English text will produce scores that match `textstat`'s
-//// fallback behaviour but should not be interpreted as meaningful
+//// Scores for non-English text should not be interpreted as meaningful
 //// grade-level estimates.
-////
-//// Reference scores produced by these implementations agree with
-//// Python `textstat` (the de-facto reference) to within roughly
-//// ±2 on the Reading Ease 0–100 scale and ±1 on grade-level scales,
-//// over a corpus of fixtures from the Wikipedia readability articles.
 
 import gleam/float
 import gleam/int
+import gleam/result
 
 import textmetrics/count
 
@@ -60,25 +54,34 @@ fn build_counts(text: String) -> Counts {
   )
 }
 
-fn require_words(c: Counts, at_least: Int) -> Result(Nil, ReadabilityError) {
-  case c.words >= at_least {
+// The counts of `text`, or `TooFewWords` when it has no words. Text
+// with a word always has a sentence, so the sentence check never fails
+// here; it guards the divisions below.
+fn counts_with_a_word(text: String) -> Result(Counts, ReadabilityError) {
+  let counts = build_counts(text)
+  use _ <- result.try(require_words(counts, 1))
+  use _ <- result.try(require_sentences(counts, 1))
+  Ok(counts)
+}
+
+fn require_words(
+  counts: Counts,
+  at_least: Int,
+) -> Result(Nil, ReadabilityError) {
+  case counts.words >= at_least {
     True -> Ok(Nil)
-    False -> Error(TooFewWords(at_least: at_least, got: c.words))
+    False -> Error(TooFewWords(at_least: at_least, got: counts.words))
   }
 }
 
 fn require_sentences(
-  c: Counts,
+  counts: Counts,
   at_least: Int,
 ) -> Result(Nil, ReadabilityError) {
-  case c.sentences >= at_least {
+  case counts.sentences >= at_least {
     True -> Ok(Nil)
-    False -> Error(TooFewSentences(at_least: at_least, got: c.sentences))
+    False -> Error(TooFewSentences(at_least: at_least, got: counts.sentences))
   }
-}
-
-fn to_float(n: Int) -> Float {
-  int.to_float(n)
 }
 
 // --- Flesch Reading Ease -------------------------------------------------
@@ -107,11 +110,9 @@ fn to_float(n: Int) -> Float {
 /// unusually short or syllable-poor text, and drop below `0` for
 /// unusually dense academic prose).
 ///
-/// Returns [`TooFewWords`](#ReadabilityError) for input with no words,
-/// and [`TooFewSentences`](#ReadabilityError) for input with no
-/// sentence-shaped content.
+/// Returns [`TooFewWords`](#ReadabilityError) for input with no words.
 pub fn flesch_reading_ease(text: String) -> Result(Float, ReadabilityError) {
-  use raw <- result_try(flesch_reading_ease_unbounded(text))
+  use raw <- result.try(flesch_reading_ease_unbounded(text))
   Ok(clamp_float(raw, lo: 0.0, hi: 100.0))
 }
 
@@ -122,12 +123,12 @@ pub fn flesch_reading_ease(text: String) -> Result(Float, ReadabilityError) {
 pub fn flesch_reading_ease_unbounded(
   text: String,
 ) -> Result(Float, ReadabilityError) {
-  let c = build_counts(text)
-  use _ <- result_try(require_words(c, 1))
-  use _ <- result_try(require_sentences(c, 1))
-  let wps = to_float(c.words) /. to_float(c.sentences)
-  let spw = to_float(c.syllables) /. to_float(c.words)
-  Ok(206.835 -. 1.015 *. wps -. 84.6 *. spw)
+  use counts <- result.try(counts_with_a_word(text))
+  let words_per_sentence =
+    int.to_float(counts.words) /. int.to_float(counts.sentences)
+  let syllables_per_word =
+    int.to_float(counts.syllables) /. int.to_float(counts.words)
+  Ok(206.835 -. 1.015 *. words_per_sentence -. 84.6 *. syllables_per_word)
 }
 
 fn clamp_float(value: Float, lo lo: Float, hi hi: Float) -> Float {
@@ -156,7 +157,7 @@ fn clamp_float(value: Float, lo lo: Float, hi hi: Float) -> Float {
 /// [`flesch_kincaid_grade_unbounded`](#flesch_kincaid_grade_unbounded)
 /// for the raw value.
 pub fn flesch_kincaid_grade(text: String) -> Result(Float, ReadabilityError) {
-  use raw <- result_try(flesch_kincaid_grade_unbounded(text))
+  use raw <- result.try(flesch_kincaid_grade_unbounded(text))
   Ok(clamp_float(raw, lo: 0.0, hi: 18.0))
 }
 
@@ -164,12 +165,12 @@ pub fn flesch_kincaid_grade(text: String) -> Result(Float, ReadabilityError) {
 pub fn flesch_kincaid_grade_unbounded(
   text: String,
 ) -> Result(Float, ReadabilityError) {
-  let c = build_counts(text)
-  use _ <- result_try(require_words(c, 1))
-  use _ <- result_try(require_sentences(c, 1))
-  let wps = to_float(c.words) /. to_float(c.sentences)
-  let spw = to_float(c.syllables) /. to_float(c.words)
-  Ok(0.39 *. wps +. 11.8 *. spw -. 15.59)
+  use counts <- result.try(counts_with_a_word(text))
+  let words_per_sentence =
+    int.to_float(counts.words) /. int.to_float(counts.sentences)
+  let syllables_per_word =
+    int.to_float(counts.syllables) /. int.to_float(counts.words)
+  Ok(0.39 *. words_per_sentence +. 11.8 *. syllables_per_word -. 15.59)
 }
 
 // --- Gunning Fog ---------------------------------------------------------
@@ -183,9 +184,8 @@ pub fn flesch_kincaid_grade_unbounded(
 /// A polysyllable here is a word with three or more syllables. The
 /// original Gunning rules excluded proper nouns, hyphenated compounds,
 /// and inflected forms (-es / -ed / -ing) — this implementation
-/// follows Python `textstat` and does **not** apply those
-/// exclusions, so scores match `textstat` rather than the strict
-/// 1952 paper. Callers needing the strict variant can subtract their
+/// does **not** apply those exclusions. Callers needing the strict
+/// variant can subtract their
 /// own exclusion count from
 /// [`count.polysyllables`](./count.html#polysyllables) before applying
 /// the formula directly.
@@ -195,18 +195,18 @@ pub fn flesch_kincaid_grade_unbounded(
 /// `[0.0, 18.0]`; use [`gunning_fog_unbounded`](#gunning_fog_unbounded)
 /// for the raw value.
 pub fn gunning_fog(text: String) -> Result(Float, ReadabilityError) {
-  use raw <- result_try(gunning_fog_unbounded(text))
+  use raw <- result.try(gunning_fog_unbounded(text))
   Ok(clamp_float(raw, lo: 0.0, hi: 18.0))
 }
 
 /// Gunning Fog Index without the `[0.0, 18.0]` clamp.
 pub fn gunning_fog_unbounded(text: String) -> Result(Float, ReadabilityError) {
-  let c = build_counts(text)
-  use _ <- result_try(require_words(c, 1))
-  use _ <- result_try(require_sentences(c, 1))
-  let wps = to_float(c.words) /. to_float(c.sentences)
-  let poly_ratio = 100.0 *. to_float(c.polysyllables) /. to_float(c.words)
-  Ok(0.4 *. { wps +. poly_ratio })
+  use counts <- result.try(counts_with_a_word(text))
+  let words_per_sentence =
+    int.to_float(counts.words) /. int.to_float(counts.sentences)
+  let poly_ratio =
+    100.0 *. int.to_float(counts.polysyllables) /. int.to_float(counts.words)
+  Ok(0.4 *. { words_per_sentence +. poly_ratio })
 }
 
 // --- SMOG ----------------------------------------------------------------
@@ -224,10 +224,10 @@ pub fn gunning_fog_unbounded(text: String) -> Result(Float, ReadabilityError) {
 /// [`TooFewSentences`](#ReadabilityError) when the input has fewer
 /// than 30 sentences.
 pub fn smog(text: String) -> Result(Float, ReadabilityError) {
-  let c = build_counts(text)
-  use _ <- result_try(require_words(c, 1))
-  use _ <- result_try(require_sentences(c, 30))
-  Ok(smog_from_counts(c))
+  let counts = build_counts(text)
+  use _ <- result.try(require_words(counts, 1))
+  use _ <- result.try(require_sentences(counts, 30))
+  Ok(smog_from_counts(counts))
 }
 
 /// SMOG-G — the same formula as SMOG, applied to texts shorter than
@@ -240,22 +240,20 @@ pub fn smog(text: String) -> Result(Float, ReadabilityError) {
 ///
 /// Use [`smog`](#smog) when you have 30+ sentences and need the
 /// statistically calibrated form; use `smog_g` for everything else.
-/// The two agree to within ~1 grade for 30+ sentences.
+/// For 30 or more sentences both return the same value.
 pub fn smog_g(text: String) -> Result(Float, ReadabilityError) {
-  let c = build_counts(text)
-  use _ <- result_try(require_words(c, 1))
-  use _ <- result_try(require_sentences(c, 1))
-  Ok(smog_from_counts(c))
+  use counts <- result.try(counts_with_a_word(text))
+  Ok(smog_from_counts(counts))
 }
 
-fn smog_from_counts(c: Counts) -> Float {
-  let polys = to_float(c.polysyllables)
-  let scale = 30.0 /. to_float(c.sentences)
-  // `polys × scale` is always >= 0 (polysyllables ≥ 0, sentences > 0
+fn smog_from_counts(counts: Counts) -> Float {
+  let polysyllables = int.to_float(counts.polysyllables)
+  let scale = 30.0 /. int.to_float(counts.sentences)
+  // `polysyllables × scale` is always >= 0 (polysyllables ≥ 0, sentences > 0
   // by the precondition), so `float.square_root` cannot return Error
   // here. Default the unreachable branch to 0.0 so the surrounding
   // Result chain stays in the ReadabilityError domain.
-  let root = case float.square_root(polys *. scale) {
+  let root = case float.square_root(polysyllables *. scale) {
     Ok(r) -> r
     Error(_) -> 0.0
   }
@@ -272,16 +270,15 @@ fn smog_from_counts(c: Counts) -> Float {
 ///
 /// The `characters` count is `letters + digits + accented graphemes`
 /// (i.e. [`count.characters`](./count.html#characters)) and excludes
-/// whitespace and punctuation. ARI is the only formula in this
-/// module that treats digits as score-bearing characters; texts
-/// containing large numeric runs will score correspondingly higher.
+/// whitespace and punctuation. Digits count as characters, as in
+/// Coleman–Liau.
 /// The result is clamped to `[0.0, 18.0]`; use
 /// [`automated_readability_index_unbounded`](#automated_readability_index_unbounded)
 /// for the raw value.
 pub fn automated_readability_index(
   text: String,
 ) -> Result(Float, ReadabilityError) {
-  use raw <- result_try(automated_readability_index_unbounded(text))
+  use raw <- result.try(automated_readability_index_unbounded(text))
   Ok(clamp_float(raw, lo: 0.0, hi: 18.0))
 }
 
@@ -289,12 +286,12 @@ pub fn automated_readability_index(
 pub fn automated_readability_index_unbounded(
   text: String,
 ) -> Result(Float, ReadabilityError) {
-  let c = build_counts(text)
-  use _ <- result_try(require_words(c, 1))
-  use _ <- result_try(require_sentences(c, 1))
-  let cpw = to_float(c.characters) /. to_float(c.words)
-  let wps = to_float(c.words) /. to_float(c.sentences)
-  Ok(4.71 *. cpw +. 0.5 *. wps -. 21.43)
+  use counts <- result.try(counts_with_a_word(text))
+  let characters_per_word =
+    int.to_float(counts.characters) /. int.to_float(counts.words)
+  let words_per_sentence =
+    int.to_float(counts.words) /. int.to_float(counts.sentences)
+  Ok(4.71 *. characters_per_word +. 0.5 *. words_per_sentence -. 21.43)
 }
 
 // --- Coleman–Liau --------------------------------------------------------
@@ -314,15 +311,14 @@ pub fn automated_readability_index_unbounded(
 ///
 /// The output approximates the US grade level expected to read the
 /// text comfortably. Like ARI, this formula uses the
-/// [`count.characters`](./count.html#characters) definition (letters
-/// + digits), so digit-heavy text scores slightly higher than its
-/// pure-prose equivalent.
+/// [`count.characters`](./count.html#characters) definition, so a
+/// digit counts as one letter.
 ///
 /// The result is clamped to `[0.0, 18.0]`; use
 /// [`coleman_liau_index_unbounded`](#coleman_liau_index_unbounded) for
 /// the raw value.
 pub fn coleman_liau_index(text: String) -> Result(Float, ReadabilityError) {
-  use raw <- result_try(coleman_liau_index_unbounded(text))
+  use raw <- result.try(coleman_liau_index_unbounded(text))
   Ok(clamp_float(raw, lo: 0.0, hi: 18.0))
 }
 
@@ -330,24 +326,10 @@ pub fn coleman_liau_index(text: String) -> Result(Float, ReadabilityError) {
 pub fn coleman_liau_index_unbounded(
   text: String,
 ) -> Result(Float, ReadabilityError) {
-  let c = build_counts(text)
-  use _ <- result_try(require_words(c, 1))
-  use _ <- result_try(require_sentences(c, 1))
-  let letters_per_100 = to_float(c.characters) /. to_float(c.words) *. 100.0
-  let sentences_per_100 = to_float(c.sentences) /. to_float(c.words) *. 100.0
+  use counts <- result.try(counts_with_a_word(text))
+  let letters_per_100 =
+    int.to_float(counts.characters) /. int.to_float(counts.words) *. 100.0
+  let sentences_per_100 =
+    int.to_float(counts.sentences) /. int.to_float(counts.words) *. 100.0
   Ok(0.0588 *. letters_per_100 -. 0.296 *. sentences_per_100 -. 15.8)
-}
-
-// --- internal `result.try` shim ------------------------------------------
-//
-// The full `gleam/result` module isn't imported here because we only need
-// the `try` combinator and the rest of this module's surface is
-// arithmetic. Keeping the helper local makes the formula functions read
-// as straight arithmetic without an extra qualified-import line.
-
-fn result_try(r: Result(a, b), cont: fn(a) -> Result(c, b)) -> Result(c, b) {
-  case r {
-    Ok(v) -> cont(v)
-    Error(e) -> Error(e)
-  }
 }

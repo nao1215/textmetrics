@@ -72,23 +72,18 @@ pub fn unified_options_checked(
 ) -> Result(UnifiedOptions, UnifiedOptionsError) {
   use _ <- result.try(validate_name(OldName, old_name))
   use _ <- result.try(validate_name(NewName, new_name))
-  Ok(UnifiedOptions(old_name: old_name, new_name: new_name, context_lines: 3))
+  Ok(UnifiedOptions(old_name:, new_name:, context_lines: 3))
 }
 
 /// Override the context-line count. Returns
-/// `Error(ContextLinesNegative(n))` when `n < 0`.
+/// `Error(ContextLinesNegative(lines))` when `lines < 0`.
 pub fn with_context_lines(
   options: UnifiedOptions,
-  n: Int,
+  lines: Int,
 ) -> Result(UnifiedOptions, UnifiedOptionsError) {
-  case n < 0 {
-    True -> Error(ContextLinesNegative(n))
-    False ->
-      Ok(UnifiedOptions(
-        old_name: options.old_name,
-        new_name: options.new_name,
-        context_lines: n,
-      ))
+  case lines < 0 {
+    True -> Error(ContextLinesNegative(lines))
+    False -> Ok(UnifiedOptions(..options, context_lines: lines))
   }
 }
 
@@ -96,11 +91,7 @@ pub fn with_context_lines(
 /// `\u{0000}` / `\t` — see [`with_old_name_checked`](#with_old_name_checked)
 /// for the strict variant.
 pub fn with_old_name(options: UnifiedOptions, name: String) -> UnifiedOptions {
-  UnifiedOptions(
-    old_name: sanitize_name(name),
-    new_name: options.new_name,
-    context_lines: options.context_lines,
-  )
+  UnifiedOptions(..options, old_name: sanitize_name(name))
 }
 
 /// Strict counterpart of [`with_old_name`](#with_old_name). Returns
@@ -111,22 +102,14 @@ pub fn with_old_name_checked(
   name: String,
 ) -> Result(UnifiedOptions, UnifiedOptionsError) {
   use _ <- result.try(validate_name(OldName, name))
-  Ok(UnifiedOptions(
-    old_name: name,
-    new_name: options.new_name,
-    context_lines: options.context_lines,
-  ))
+  Ok(UnifiedOptions(..options, old_name: name))
 }
 
 /// Override the new-file label. Silently strips `\n` / `\r` /
 /// `\u{0000}` / `\t` — see [`with_new_name_checked`](#with_new_name_checked)
 /// for the strict variant.
 pub fn with_new_name(options: UnifiedOptions, name: String) -> UnifiedOptions {
-  UnifiedOptions(
-    old_name: options.old_name,
-    new_name: sanitize_name(name),
-    context_lines: options.context_lines,
-  )
+  UnifiedOptions(..options, new_name: sanitize_name(name))
 }
 
 /// Strict counterpart of [`with_new_name`](#with_new_name). Returns
@@ -137,11 +120,7 @@ pub fn with_new_name_checked(
   name: String,
 ) -> Result(UnifiedOptions, UnifiedOptionsError) {
   use _ <- result.try(validate_name(NewName, name))
-  Ok(UnifiedOptions(
-    old_name: options.old_name,
-    new_name: name,
-    context_lines: options.context_lines,
-  ))
+  Ok(UnifiedOptions(..options, new_name: name))
 }
 
 // The unified-diff header — `--- <old_name>\n+++ <new_name>\n` — is
@@ -151,18 +130,17 @@ pub fn with_new_name_checked(
 // truncate the line for any POSIX C string consumer. Tabs are
 // folded into the same set because `diff -u` uses them to separate
 // the filename from the date stamp.
+// Filters by code point rather than grapheme: "\r\n" is a single
+// grapheme cluster and would slip through a grapheme-wise filter.
 fn sanitize_name(name: String) -> String {
-  string.to_graphemes(name)
-  |> list.filter(fn(g) {
-    case g {
-      "\n" -> False
-      "\r" -> False
-      "\u{0000}" -> False
-      "\t" -> False
+  string.to_utf_codepoints(name)
+  |> list.filter(fn(codepoint) {
+    case string.utf_codepoint_to_int(codepoint) {
+      0x0A | 0x0D | 0x00 | 0x09 -> False
       _ -> True
     }
   })
-  |> string.concat
+  |> string.from_utf_codepoints
 }
 
 fn validate_name(
@@ -198,11 +176,36 @@ pub fn context_lines(options: UnifiedOptions) -> Int {
 /// Optimal edit script transforming `old` into `new`, computed by the
 /// Myers (1986) O(ND) algorithm.
 ///
-/// The script's `cost` (Insert + Delete) equals `levenshtein_list`
-/// of `old` vs `new` with substitution counted as one insert plus
-/// one delete. Tie-breaking prefers earlier deletions over insertions,
+/// The script's `cost` (Insert + Delete) equals the indel distance
+/// `list.length(old) + list.length(new) - 2 * lcs.length(old, new)`.
+/// Tie-breaking prefers earlier deletions over insertions,
 /// matching GNU `diff(1)`.
 pub fn myers(old: List(a), new: List(a)) -> EditScript(a) {
+  // The forward search always matches the common prefix first, so it
+  // is taken off before the O(ND) search. The common suffix is left in:
+  // stripping it would change which of several optimal scripts the
+  // search returns.
+  let #(reversed_prefix, old, new) = split_common_prefix(old, new, [])
+  list.fold(reversed_prefix, myers_middle(old, new), fn(script, item) {
+    [item, ..script]
+  })
+}
+
+// Returns the common prefix as `Equal` edits in reverse order, and the
+// rest of both lists.
+fn split_common_prefix(
+  old: List(a),
+  new: List(a),
+  reversed_prefix: EditScript(a),
+) -> #(EditScript(a), List(a), List(a)) {
+  case old, new {
+    [x, ..old_rest], [y, ..new_rest] if x == y ->
+      split_common_prefix(old_rest, new_rest, [Equal(x), ..reversed_prefix])
+    _, _ -> #(reversed_prefix, old, new)
+  }
+}
+
+fn myers_middle(old: List(a), new: List(a)) -> EditScript(a) {
   let m = list.length(old)
   let n = list.length(new)
   case m, n {
@@ -397,200 +400,201 @@ fn walk_origin_back(
 /// Falls back to [`myers`](#myers) at leaves where no unique anchors
 /// exist. Operates on `List(String)`.
 pub fn patience(old: List(String), new: List(String)) -> EditScript(String) {
-  case old, new {
-    [], [] -> []
-    [], _ -> list.map(new, fn(item) { Insert(item) })
-    _, [] -> list.map(old, fn(item) { Delete(item) })
-    _, _ -> {
-      let pairs = find_unique_pairs(old, new)
-      case pairs {
-        [] -> myers(old, new)
-        _ -> {
-          let anchors = longest_increasing_subseq(pairs)
-          case anchors {
-            [] -> myers(old, new)
-            _ -> patience_segments(old, new, anchors, [])
-          }
-        }
+  patience_loop([Segment(old:, new:)], [])
+}
+
+// Work still to do, in output order. Segments are expanded in place
+// instead of recursing, so deeply nested inputs do not grow the stack.
+type PatienceTask {
+  Segment(old: List(String), new: List(String))
+  Anchor(line: String)
+}
+
+fn patience_loop(
+  tasks: List(PatienceTask),
+  acc: List(EditScript(String)),
+) -> EditScript(String) {
+  case tasks {
+    [] -> list.reverse(acc) |> list.flatten
+    [Anchor(line:), ..rest] -> patience_loop(rest, [[Equal(line)], ..acc])
+    [Segment(old: [], new: []), ..rest] -> patience_loop(rest, acc)
+    [Segment(old: [], new:), ..rest] ->
+      patience_loop(rest, [list.map(new, Insert), ..acc])
+    [Segment(old:, new: []), ..rest] ->
+      patience_loop(rest, [list.map(old, Delete), ..acc])
+    [Segment(old:, new:), ..rest] ->
+      case longest_increasing_subseq(find_unique_pairs(old, new)) {
+        [] -> patience_loop(rest, [myers(old, new), ..acc])
+        anchors ->
+          split_at_anchors(old, new, anchors, 0, 0, [])
+          |> list.fold(rest, fn(tasks, task) { [task, ..tasks] })
+          |> patience_loop(acc)
       }
-    }
   }
 }
 
-fn patience_segments(
+// Splits `old` and `new` around the anchors, whose positions are
+// absolute within the segment. Returns the tasks in reverse order.
+fn split_at_anchors(
   old: List(String),
   new: List(String),
   anchors: List(#(Int, Int)),
-  acc: List(EditScript(String)),
-) -> EditScript(String) {
+  old_position: Int,
+  new_position: Int,
+  reversed_tasks: List(PatienceTask),
+) -> List(PatienceTask) {
   case anchors {
-    [] -> {
-      let sub = case old, new {
-        [], [] -> []
-        _, _ -> patience(old, new)
-      }
-      list.flatten(list.reverse([sub, ..acc]))
-    }
-    [#(oi, ni), ..rest] -> {
-      let #(seg_old, anchor_and_after_old) = list.split(old, oi)
-      let #(seg_new, anchor_and_after_new) = list.split(new, ni)
-      let sub = patience(seg_old, seg_new)
-      case anchor_and_after_old, anchor_and_after_new {
-        [anchor_old, ..rest_old], [_, ..rest_new] -> {
-          let anchor_step = [Equal(anchor_old)]
-          let new_anchors =
-            list.map(rest, fn(p) {
-              let #(o, n) = p
-              #(o - oi - 1, n - ni - 1)
-            })
-          patience_segments(rest_old, rest_new, new_anchors, [
-            anchor_step,
-            sub,
-            ..acc
-          ])
-        }
-        _, _ -> list.flatten(list.reverse([sub, ..acc]))
+    [] -> [Segment(old:, new:), ..reversed_tasks]
+    [#(old_index, new_index), ..rest] -> {
+      let #(old_before, old_after) = list.split(old, old_index - old_position)
+      let #(new_before, new_after) = list.split(new, new_index - new_position)
+      let reversed_tasks = [
+        Segment(old: old_before, new: new_before),
+        ..reversed_tasks
+      ]
+      case old_after, new_after {
+        [line, ..old_rest], [_, ..new_rest] ->
+          split_at_anchors(
+            old_rest,
+            new_rest,
+            rest,
+            old_index + 1,
+            new_index + 1,
+            [Anchor(line:), ..reversed_tasks],
+          )
+        _, _ -> reversed_tasks
       }
     }
   }
 }
 
+// Pairs `#(old_index, new_index)` of the lines that occur exactly once
+// in each input, in increasing old-index order.
 fn find_unique_pairs(
   old: List(String),
   new: List(String),
 ) -> List(#(Int, Int)) {
-  let old_counts = count_occurrences(old)
-  let new_counts = count_occurrences(new)
-  let new_index_of = first_index_of(new)
-  list.index_fold(old, [], fn(acc, line, oi) {
-    case
-      dict.get(old_counts, line),
-      dict.get(new_counts, line),
-      dict.get(new_index_of, line)
-    {
-      Ok(1), Ok(1), Ok(ni) -> [#(oi, ni), ..acc]
-      _, _, _ -> acc
-    }
-  })
-  |> list.reverse
-}
-
-fn count_occurrences(lines: List(String)) -> Dict(String, Int) {
-  list.fold(lines, dict.new(), fn(acc, line) {
-    dict.upsert(acc, line, fn(opt) {
-      case opt {
-        Some(c) -> c + 1
-        None -> 1
+  let counts =
+    list.index_fold(old, dict.new(), fn(counts, line, index) {
+      dict.upsert(counts, line, fn(existing) {
+        case existing {
+          Some(count) -> LineCount(..count, in_old: count.in_old + 1)
+          None ->
+            LineCount(in_old: 1, old_index: index, in_new: 0, new_index: 0)
+        }
+      })
+    })
+  let counts =
+    list.index_fold(new, counts, fn(counts, line, index) {
+      case dict.get(counts, line) {
+        Ok(count) ->
+          dict.insert(
+            counts,
+            line,
+            LineCount(..count, in_new: count.in_new + 1, new_index: index),
+          )
+        Error(Nil) -> counts
       }
     })
-  })
-}
-
-fn first_index_of(lines: List(String)) -> Dict(String, Int) {
-  list.index_fold(lines, dict.new(), fn(acc, line, i) {
-    case dict.has_key(acc, line) {
-      True -> acc
-      False -> dict.insert(acc, line, i)
+  dict.fold(counts, [], fn(pairs, _line, count) {
+    case count {
+      LineCount(in_old: 1, old_index:, in_new: 1, new_index:) -> [
+        #(old_index, new_index),
+        ..pairs
+      ]
+      LineCount(..) -> pairs
     }
   })
+  |> list.sort(fn(left, right) { int.compare(left.0, right.0) })
 }
 
+type LineCount {
+  LineCount(in_old: Int, old_index: Int, in_new: Int, new_index: Int)
+}
+
+// Longest increasing subsequence (by new index) of `pairs`, which are in
+// increasing old-index order, via patience sorting: `O(k log² k)` for
+// `k` pairs. Among equally long subsequences it picks the same one as a
+// quadratic scan that takes, for each pair, the earliest predecessor
+// of maximal length, and ends at the earliest pair of maximal length.
 fn longest_increasing_subseq(pairs: List(#(Int, Int))) -> List(#(Int, Int)) {
-  let n = list.length(pairs)
-  case n {
-    0 -> []
-    _ -> {
-      let arr = list_to_dict(pairs)
-      let #(dp, prev) = build_lis_tables(arr, n, 0, dict.new(), dict.new())
-      let best_idx = find_max_dp(dp, n, 0, 0, 0)
-      reconstruct_lis(arr, prev, best_idx, [])
+  let #(dealt, pile_count) = deal_into_piles(pairs, dict.new(), 0, [])
+  // Each pile lists its pairs in increasing old-index order; within a
+  // pile the new indices decrease.
+  let piles =
+    list.fold(dealt, dict.new(), fn(piles, entry) {
+      let #(pile, pair) = entry
+      dict.upsert(piles, pile, fn(existing) {
+        case existing {
+          Some(pairs) -> [pair, ..pairs]
+          None -> [pair]
+        }
+      })
+    })
+  case dict.get(piles, pile_count - 1) {
+    Ok([last, ..]) -> collect_lis(piles, pile_count - 2, last, [last])
+    Ok([]) | Error(Nil) -> []
+  }
+}
+
+// Places each pair on the leftmost pile whose top has a larger new
+// index, and returns `#(pile, pair)` for every pair in reverse order.
+fn deal_into_piles(
+  pairs: List(#(Int, Int)),
+  tops: Dict(Int, Int),
+  pile_count: Int,
+  dealt: List(#(Int, #(Int, Int))),
+) -> #(List(#(Int, #(Int, Int))), Int) {
+  case pairs {
+    [] -> #(dealt, pile_count)
+    [pair, ..rest] -> {
+      let #(_, new_index) = pair
+      let pile = first_pile_above(tops, new_index, 0, pile_count)
+      let pile_count = int.max(pile_count, pile + 1)
+      deal_into_piles(rest, dict.insert(tops, pile, new_index), pile_count, [
+        #(pile, pair),
+        ..dealt
+      ])
     }
   }
 }
 
-fn build_lis_tables(
-  arr: Dict(Int, #(Int, Int)),
-  n: Int,
-  i: Int,
-  dp: Dict(Int, Int),
-  prev: Dict(Int, Int),
-) -> #(Dict(Int, Int), Dict(Int, Int)) {
-  case i >= n {
-    True -> #(dp, prev)
-    False -> {
-      let #(best_len, best_prev) = scan_predecessors(arr, dp, i, 0, 1, -1)
-      let dp2 = dict.insert(dp, i, best_len)
-      let prev2 = dict.insert(prev, i, best_prev)
-      build_lis_tables(arr, n, i + 1, dp2, prev2)
-    }
-  }
-}
-
-fn scan_predecessors(
-  arr: Dict(Int, #(Int, Int)),
-  dp: Dict(Int, Int),
-  i: Int,
-  j: Int,
-  best_len: Int,
-  best_prev: Int,
-) -> #(Int, Int) {
-  case j >= i {
-    True -> #(best_len, best_prev)
-    False -> {
-      let pi = case dict.get(arr, i) {
-        Ok(p) -> p
-        _ -> #(0, 0)
-      }
-      let pj = case dict.get(arr, j) {
-        Ok(p) -> p
-        _ -> #(0, 0)
-      }
-      let #(_, ni) = pi
-      let #(_, nj) = pj
-      let dp_j = result.unwrap(dict.get(dp, j), 0)
-      let candidate = dp_j + 1
-      case nj < ni && candidate > best_len {
-        True -> scan_predecessors(arr, dp, i, j + 1, candidate, j)
-        False -> scan_predecessors(arr, dp, i, j + 1, best_len, best_prev)
-      }
-    }
-  }
-}
-
-fn find_max_dp(
-  dp: Dict(Int, Int),
-  n: Int,
-  i: Int,
-  best_len: Int,
-  best_idx: Int,
+// Binary search over the pile tops, which increase from left to right.
+fn first_pile_above(
+  tops: Dict(Int, Int),
+  value: Int,
+  low: Int,
+  high: Int,
 ) -> Int {
-  case i >= n {
-    True -> best_idx
+  case low >= high {
+    True -> low
     False -> {
-      let v = result.unwrap(dict.get(dp, i), 0)
-      case v > best_len {
-        True -> find_max_dp(dp, n, i + 1, v, i)
-        False -> find_max_dp(dp, n, i + 1, best_len, best_idx)
+      let middle = { low + high } / 2
+      case dict.get(tops, middle) {
+        Ok(top) if top < value -> first_pile_above(tops, value, middle + 1, high)
+        Ok(_) | Error(Nil) -> first_pile_above(tops, value, low, middle)
       }
     }
   }
 }
 
-fn reconstruct_lis(
-  arr: Dict(Int, #(Int, Int)),
-  prev: Dict(Int, Int),
-  idx: Int,
+// Walks back from the chosen last pair, taking from each earlier pile
+// the earliest pair whose new index is smaller.
+fn collect_lis(
+  piles: Dict(Int, List(#(Int, Int))),
+  pile: Int,
+  next: #(Int, Int),
   acc: List(#(Int, Int)),
 ) -> List(#(Int, Int)) {
-  case idx < 0 {
+  case pile < 0 {
     True -> acc
     False -> {
-      let pair = case dict.get(arr, idx) {
-        Ok(p) -> p
-        _ -> #(0, 0)
+      let #(_, next_new_index) = next
+      let candidates = result.unwrap(dict.get(piles, pile), [])
+      case list.find(candidates, fn(pair) { pair.1 < next_new_index }) {
+        Ok(pair) -> collect_lis(piles, pile - 1, pair, [pair, ..acc])
+        Error(Nil) -> acc
       }
-      let prev_idx = result.unwrap(dict.get(prev, idx), -1)
-      reconstruct_lis(arr, prev, prev_idx, [pair, ..acc])
     }
   }
 }
@@ -620,7 +624,7 @@ fn has_changes(script: EditScript(String)) -> Bool {
   case script {
     [] -> False
     [Equal(_), ..rest] -> has_changes(rest)
-    _ -> True
+    [Insert(_), ..] | [Delete(_), ..] -> True
   }
 }
 
@@ -660,42 +664,23 @@ fn build_hunks(
   events: List(LineEvent),
   context_lines: Int,
 ) -> List(List(LineEvent)) {
-  let events_arr = list_to_dict(events)
-  let n = list.length(events)
-  let change_indices = find_change_indices(events_arr, n, 0, []) |> list.reverse
-  case change_indices {
-    [] -> []
-    _ -> {
-      let ranges =
-        list.map(change_indices, fn(i) {
-          #(int.max(0, i - context_lines), int.min(n - 1, i + context_lines))
-        })
-      let merged = merge_ranges(ranges)
-      list.map(merged, fn(range) {
-        let #(lo, hi) = range
-        slice_events(events_arr, lo, hi + 1, [])
-      })
-    }
-  }
-}
-
-fn find_change_indices(
-  events_arr: Dict(Int, LineEvent),
-  n: Int,
-  i: Int,
-  acc: List(Int),
-) -> List(Int) {
-  case i >= n {
-    True -> acc
-    False -> {
-      let new_acc = case dict.get(events_arr, i) {
-        Ok(InsertEvent(_, _, _)) -> [i, ..acc]
-        Ok(DeleteEvent(_, _, _)) -> [i, ..acc]
-        _ -> acc
+  let last_index = list.length(events) - 1
+  let change_indices =
+    list.index_fold(events, [], fn(indices, event, index) {
+      case event {
+        InsertEvent(..) | DeleteEvent(..) -> [index, ..indices]
+        ContextEvent(..) -> indices
       }
-      find_change_indices(events_arr, n, i + 1, new_acc)
-    }
-  }
+    })
+    |> list.reverse
+  let ranges =
+    list.map(change_indices, fn(index) {
+      #(
+        int.max(0, index - context_lines),
+        int.min(last_index, index + context_lines),
+      )
+    })
+  slice_ranges(events, 0, merge_ranges(ranges), [], [])
 }
 
 fn merge_ranges(ranges: List(#(Int, Int))) -> List(#(Int, Int)) {
@@ -713,112 +698,98 @@ fn merge_ranges_loop(
   case remaining {
     [] -> list.reverse([current, ..acc])
     [#(lo, hi), ..rest] -> {
-      let #(c_lo, c_hi) = current
-      case lo <= c_hi + 1 {
-        True -> merge_ranges_loop(rest, #(c_lo, int.max(c_hi, hi)), acc)
+      let #(current_low, current_high) = current
+      case lo <= current_high + 1 {
+        True ->
+          merge_ranges_loop(
+            rest,
+            #(current_low, int.max(current_high, hi)),
+            acc,
+          )
         False -> merge_ranges_loop(rest, #(lo, hi), [current, ..acc])
       }
     }
   }
 }
 
-fn slice_events(
-  events_arr: Dict(Int, LineEvent),
-  i: Int,
-  end: Int,
-  acc: List(LineEvent),
-) -> List(LineEvent) {
-  case i >= end {
-    True -> list.reverse(acc)
-    False ->
-      case dict.get(events_arr, i) {
-        Ok(e) -> slice_events(events_arr, i + 1, end, [e, ..acc])
-        Error(_) -> list.reverse(acc)
+// Cuts the events at the given ranges, which are sorted and disjoint.
+fn slice_ranges(
+  events: List(LineEvent),
+  index: Int,
+  ranges: List(#(Int, Int)),
+  current: List(LineEvent),
+  hunks: List(List(LineEvent)),
+) -> List(List(LineEvent)) {
+  case ranges, events {
+    [#(low, high), ..later_ranges], [event, ..later_events] ->
+      case index < low, index == high {
+        True, _ -> slice_ranges(later_events, index + 1, ranges, current, hunks)
+        False, True ->
+          slice_ranges(later_events, index + 1, later_ranges, [], [
+            list.reverse([event, ..current]),
+            ..hunks
+          ])
+        False, False ->
+          slice_ranges(
+            later_events,
+            index + 1,
+            ranges,
+            [event, ..current],
+            hunks,
+          )
       }
+    [], _ | [_, ..], [] -> list.reverse(hunks)
   }
 }
 
 fn emit_hunk(events: List(LineEvent)) -> String {
-  let #(os, oc, ns, nc) = compute_hunk_meta(events)
+  let #(first_old, first_new) = case events {
+    [first, ..] -> #(first.old_pos, first.new_pos)
+    [] -> #(1, 1)
+  }
+  let old_lines =
+    list.filter_map(events, fn(event) {
+      case event {
+        ContextEvent(old_pos:, ..) | DeleteEvent(old_pos:, ..) -> Ok(old_pos)
+        InsertEvent(..) -> Error(Nil)
+      }
+    })
+  let new_lines =
+    list.filter_map(events, fn(event) {
+      case event {
+        ContextEvent(new_pos:, ..) | InsertEvent(new_pos:, ..) -> Ok(new_pos)
+        DeleteEvent(..) -> Error(Nil)
+      }
+    })
   let header =
-    "@@ -" <> format_range(os, oc) <> " +" <> format_range(ns, nc) <> " @@\n"
+    "@@ -"
+    <> format_range(hunk_side(old_lines, first_old))
+    <> " +"
+    <> format_range(hunk_side(new_lines, first_new))
+    <> " @@\n"
   let body = list.map(events, event_to_line) |> string.concat
   header <> body
 }
 
-fn format_range(start: Int, count: Int) -> String {
+// Start and line count of one side of a hunk. A side with no lines
+// starts at the line before the hunk, as in `diff -u` (`-0,0`).
+fn hunk_side(positions: List(Int), first_position: Int) -> #(Int, Int) {
+  case positions {
+    [start, ..] -> #(start, list.length(positions))
+    [] -> #(int.max(0, first_position - 1), 0)
+  }
+}
+
+fn format_range(side: #(Int, Int)) -> String {
+  let #(start, count) = side
   case count {
     1 -> int.to_string(start)
     _ -> int.to_string(start) <> "," <> int.to_string(count)
   }
 }
 
-fn compute_hunk_meta(events: List(LineEvent)) -> #(Int, Int, Int, Int) {
-  let #(os, oc) = old_start_count(events)
-  let #(ns, nc) = new_start_count(events)
-  #(os, oc, ns, nc)
-}
-
-fn old_start_count(events: List(LineEvent)) -> #(Int, Int) {
-  let folded =
-    list.fold(events, #(-1, 0), fn(acc, e) {
-      let #(start, count) = acc
-      case e {
-        ContextEvent(_, op, _) ->
-          case start {
-            -1 -> #(op, count + 1)
-            _ -> #(start, count + 1)
-          }
-        DeleteEvent(_, op, _) ->
-          case start {
-            -1 -> #(op, count + 1)
-            _ -> #(start, count + 1)
-          }
-        InsertEvent(_, _, _) -> acc
-      }
-    })
-  let #(s, c) = folded
-  case s {
-    -1 ->
-      case events {
-        [InsertEvent(_, op, _), ..] -> #(int.max(0, op - 1), 0)
-        _ -> #(0, 0)
-      }
-    _ -> #(s, c)
-  }
-}
-
-fn new_start_count(events: List(LineEvent)) -> #(Int, Int) {
-  let folded =
-    list.fold(events, #(-1, 0), fn(acc, e) {
-      let #(start, count) = acc
-      case e {
-        ContextEvent(_, _, np) ->
-          case start {
-            -1 -> #(np, count + 1)
-            _ -> #(start, count + 1)
-          }
-        InsertEvent(_, _, np) ->
-          case start {
-            -1 -> #(np, count + 1)
-            _ -> #(start, count + 1)
-          }
-        DeleteEvent(_, _, _) -> acc
-      }
-    })
-  let #(s, c) = folded
-  case s {
-    -1 ->
-      case events {
-        [DeleteEvent(_, _, np), ..] -> #(int.max(0, np - 1), 0)
-        _ -> #(0, 0)
-      }
-    _ -> #(s, c)
-  }
-}
-
-fn event_to_line(e: LineEvent) -> String {
-  case e {
+fn event_to_line(event: LineEvent) -> String {
+  case event {
     ContextEvent(line, _, _) -> " " <> line <> "\n"
     DeleteEvent(line, _, _) -> "-" <> line <> "\n"
     InsertEvent(line, _, _) -> "+" <> line <> "\n"
