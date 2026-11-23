@@ -44,9 +44,9 @@ The [API reference](https://hexdocs.pm/textmetrics/textmetrics.html) covers dist
 
 String comparison normalizes inputs to NFC using the target runtime. Generic list operations compare their elements directly. Candidate ranking returns the original candidate strings. Similarity scores range from `0.0` to `1.0`. Different strings can receive the same maximum score.
 
-Unified diff rendering takes an edit script of individual lines without line terminators. It emits LF-terminated lines and does not preserve whether a file originally lacked its final newline.
+Unified diff rendering takes an edit script of individual lines without line terminators and rejects an element that contains a line feed. To diff two texts, split each on `"\n"` and drop the empty element a final newline leaves. The output uses LF-terminated lines and does not mark a file that lacked its final newline.
 
-Readability functions return a Result containing the raw formula value, which may fall outside customary display ranges. They return an error for input with no words; `smog` also requires 30 sentences. `smog_extrapolated` permits shorter samples. The syllable heuristic does not detect language, and its reading-level estimates are intended for English.
+Readability functions return a Result containing the raw formula value, which may fall outside customary display ranges. They return an error for input with no words; `smog` also requires 30 sentences. `smog_extrapolated` permits shorter samples. Words follow the UAX #29 rules that keep `don't`, `U.S.A`, and `3.50` together. The syllable heuristic does not detect language, and its reading-level estimates are intended for English.
 
 ## Contributing
 
