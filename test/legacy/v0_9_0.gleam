@@ -2,8 +2,6 @@
 //// rewritten for speed and memory. The tests compare the current code
 //// against these on random inputs, so the rewrites must return the
 //// same results, including the choice among equally good answers.
-//// Exception: Jaro half-transposition arithmetic is corrected to preserve
-//// fractional halves; its v0.9.0 Dict-based matcher is unchanged.
 
 import gleam/dict.{type Dict}
 import gleam/int
@@ -753,7 +751,6 @@ fn min4(a: Int, b: Int, c: Int, d: Int) -> Int {
 }
 
 // --- similarity.jaro ---
-// The v0.9.0 matcher is retained; only half-transposition division is corrected.
 
 pub fn jaro(ga: List(String), gb: List(String)) -> Float {
   let la = list.length(ga)
@@ -786,7 +783,7 @@ pub fn jaro(ga: List(String), gb: List(String)) -> Float {
           let m_f = int.to_float(matches)
           let la_f = int.to_float(la)
           let lb_f = int.to_float(lb)
-          let t_f = int.to_float(half_t) /. 2.0
+          let t_f = int.to_float(half_t / 2)
           { m_f /. la_f +. m_f /. lb_f +. { m_f -. t_f } /. m_f } /. 3.0
         }
       }

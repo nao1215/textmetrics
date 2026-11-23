@@ -74,16 +74,18 @@ When reporting a bug, include:
 
 ## Regenerating Unicode categories
 
-The category table uses Unicode 15.1.0. Regeneration requires Python 3 and Gleam 1.19.2 for formatting. Download the fixed input separately, then run the generator:
+The generated tables use Unicode 17.0.0: general categories from `UnicodeData.txt`, and the word and sentence break classes used for counting from `WordBreakProperty.txt` and `SentenceBreakProperty.txt`. Regeneration requires Python 3 and Gleam 1.19.2 for formatting. Download the fixed inputs separately, then run the generator:
 
 ```sh
-curl -LfsS https://www.unicode.org/Public/15.1.0/ucd/UnicodeData.txt -o /tmp/UnicodeData-15.1.0.txt
-python3 scripts/gen_unicode_category.py --unicode-data /tmp/UnicodeData-15.1.0.txt
-python3 scripts/gen_unicode_category.py --unicode-data /tmp/UnicodeData-15.1.0.txt --check
-python3 -m unittest discover -s scripts -p 'test_gen_unicode_category.py'
+curl -LfsS https://www.unicode.org/Public/17.0.0/ucd/UnicodeData.txt -o /tmp/UnicodeData-17.0.0.txt
+curl -LfsS https://www.unicode.org/Public/17.0.0/ucd/auxiliary/WordBreakProperty.txt -o /tmp/WordBreakProperty-17.0.0.txt
+curl -LfsS https://www.unicode.org/Public/17.0.0/ucd/auxiliary/SentenceBreakProperty.txt -o /tmp/SentenceBreakProperty-17.0.0.txt
+python3 scripts/gen_unicode_category.py --unicode-data /tmp/UnicodeData-17.0.0.txt --word-break-property /tmp/WordBreakProperty-17.0.0.txt --sentence-break-property /tmp/SentenceBreakProperty-17.0.0.txt
+python3 scripts/gen_unicode_category.py --unicode-data /tmp/UnicodeData-17.0.0.txt --word-break-property /tmp/WordBreakProperty-17.0.0.txt --sentence-break-property /tmp/SentenceBreakProperty-17.0.0.txt --check
+python3 -m unittest discover -s scripts -p 'test_gen_unicode_*.py'
 ```
 
-The generator checks the input SHA-256, expands First/Last ranges, and treats unlisted code points as unassigned. It replaces the output only after parsing and formatting succeed; `--check` compares without replacing it. It does not use Python's Unicode database or download data. The fixed classification table is separate from the target runtime's NFC normalization and grapheme segmentation.
+The generator checks the SHA-256 of each input, expands First/Last ranges, and treats unlisted code points as unassigned. It replaces the output only after parsing and formatting succeed; `--check` compares without replacing it. It does not use Python's Unicode database or download data. The fixed tables are separate from the target runtime's NFC normalization and grapheme segmentation.
 
 ## Verifying releases
 

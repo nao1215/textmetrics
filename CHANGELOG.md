@@ -7,6 +7,19 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ## [Unreleased]
 
+### Changed
+
+- Breaking: `to_unified` returns `Error(LineContainsNewline(line))` when a script element contains a line feed. Such an element used to render as two diff lines behind one prefix, which `patch` applies to the wrong lines. Elements are still checked after the names and context count, including for unchanged scripts. Carriage returns stay part of the line.
+- Jaro scores change: the transposition count is half the mismatched matched pairs rounded down, as in Winkler's strcmp95 code and in rapidfuzz, jellyfish, and textdistance. 0.11.0 kept the fraction, so an odd number of mismatches gave different scores from all of them; `jaro("bdab", "daabcbbc")` is now 0.75 instead of 0.7083. `jaro_winkler` and `rank_jaro_winkler` inherit the change.
+- Word counts change: words follow the UAX #29 rules that keep the punctuation it allows between two letters, such as an apostrophe, colon, or period (`don't`, `it’s`, `U.S.A`, `example.com`), and between two digits, such as a period, comma, semicolon, or apostrophe (`3.50`, `1,000`), inside one word. Format characters such as the soft hyphen no longer split a word, and Word_Break=Numeric characters such as U+066B ARABIC DECIMAL SEPARATOR and the Arabic number signs count as digits. `count_words("don't stop")` is now 2 instead of 3. Syllable, polysyllable, and readability results change for such text; on plain English the word counts now agree with textstat. Hyphens still separate words, as UAX #29 specifies.
+- Word, character, and sentence classification uses Unicode 17.0.0 instead of 15.1.0, so letters added in Unicode 16 and 17 (for example U+1C89 and CJK Extension J) count as letters. The generator now also reads the pinned `WordBreakProperty.txt` and `SentenceBreakProperty.txt`.
+
+### Fixed
+
+- `count_sentences` no longer counts a closing quotation mark or bracket after a terminator as the start of another sentence (UAX #29 SB9). `He said "Hi."`, `(See above.)`, and `「終わり。」` are each one sentence instead of two. A multi-period abbreviation followed by a closer and a capitalized word, as in `the U.S.A." She`, now ends its sentence. Readability scores built on sentence counts change accordingly.
+- `myers` (and `patience`, which falls back to it) no longer keeps a persistent Dict for every edit step. Two unrelated 3,000-line inputs took 16 seconds on Erlang and 25 seconds on JavaScript and now take about 2 seconds on each, with memory near O(D √(n + m)) instead of O(D²). The scripts are unchanged. On Erlang, inputs longer than the 16,777,215-element tuple limit fall back to the `array` module.
+- `damerau_levenshtein` no longer builds a Dict for every row, and `optimal_string_alignment` no longer allocates a Result per cell. For two 2,000-grapheme strings this halves the Damerau-Levenshtein time and makes optimal string alignment about 2.7 times faster on JavaScript. Results are unchanged.
+
 ## [0.11.0] - 2026-11-23
 
 ### Changed

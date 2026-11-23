@@ -1,8 +1,7 @@
 //// The diff, LCS and distance algorithms were rewritten to use less
 //// time and memory. These properties check that the rewrites return
 //// exactly what v0.9.0 returned (copied into `legacy/v0_9_0`), including
-//// which of several equally good answers is chosen. Jaro uses the same
-//// legacy matcher with fractional half-transposition arithmetic corrected.
+//// which of several equally good answers is chosen.
 
 import gleam/list
 import gleam/string
@@ -145,7 +144,7 @@ pub fn osa_matches_v0_9_0_test() {
   )
 }
 
-pub fn jaro_matches_fractional_reference_test() {
+pub fn jaro_matches_v0_9_0_test() {
   metamon.forall_with(
     config(),
     generator.tuple2(word_generator(), word_generator()),
@@ -188,7 +187,7 @@ fn long_word_generator() -> Generator(String) {
   |> generator.map(string.concat)
 }
 
-pub fn legacy_distances_and_fractional_jaro_match_on_long_words_test() {
+pub fn legacy_distances_and_jaro_match_on_long_words_test() {
   metamon.forall_with(
     config(),
     generator.tuple2(long_word_generator(), long_word_generator()),

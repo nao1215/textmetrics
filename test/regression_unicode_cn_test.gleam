@@ -65,7 +65,8 @@ pub fn punctuation_symbols_and_other_numbers_remain_excluded_test() {
   assert_counts(".", 0, 0, 0)
   assert_counts("+", 0, 0, 0)
   assert_counts("²", 0, 0, 0)
-  assert_counts("a.b+c²d", 4, 4, 4)
+  // The period joins `a.b` into one word (UAX #29 WB6, WB7).
+  assert_counts("a.b+c²d", 3, 4, 3)
 }
 
 pub fn syllables_in_word_keeps_nonempty_fallback_for_cn_test() {

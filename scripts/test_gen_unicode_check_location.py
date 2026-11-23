@@ -30,6 +30,13 @@ class CandidateLocationTests(unittest.TestCase):
         row = ";".join(["0100", "LETTER", "Lo"] + [""] * 12)
         self.input.write_text(row + "\n", encoding="utf-8")
         self.digest = hashlib.sha256(self.input.read_bytes()).hexdigest()
+        self.word_break = self.root / "WordBreakProperty.txt"
+        self.word_break.write_text("0027 ; Single_Quote\n", encoding="utf-8")
+        self.sentence_break = self.root / "SentenceBreakProperty.txt"
+        self.sentence_break.write_text("0022 ; Close\n", encoding="utf-8")
+        self.addCleanup(mock.patch.stopall)
+        mock.patch.object(generator, "WORD_BREAK_SHA256", hashlib.sha256(self.word_break.read_bytes()).hexdigest()).start()
+        mock.patch.object(generator, "SENTENCE_BREAK_SHA256", hashlib.sha256(self.sentence_break.read_bytes()).hexdigest()).start()
         self.candidates = []
 
     def snapshot(self):
@@ -48,7 +55,12 @@ class CandidateLocationTests(unittest.TestCase):
         return subprocess.CompletedProcess(arguments, 0, "", "")
 
     def run_cli(self, check, formatter=None):
-        arguments = ["--unicode-data", str(self.input), "--output", str(self.output)]
+        arguments = [
+            "--unicode-data", str(self.input),
+            "--word-break-property", str(self.word_break),
+            "--sentence-break-property", str(self.sentence_break),
+            "--output", str(self.output),
+        ]
         if check:
             arguments.append("--check")
         with mock.patch.object(generator, "UNICODE_SHA256", self.digest), \

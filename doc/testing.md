@@ -16,7 +16,7 @@ Tests under `test/textmetrics/` cover each algorithm family through the public `
 
 ## Differential testing
 
-`test/reference/naive_oracle_test.gleam` compares distance implementations with recursive definitions of Levenshtein, optimal string alignment, and LCS length on short strings with repeated letters, accents, and emoji. Damerau-Levenshtein is checked against distance bounds, and `longest_common_subsequence` must return a common subsequence of maximal length. The legacy reference keeps its independent algorithms; its Jaro half-transposition arithmetic is explicitly corrected and checked against hand-calculated values.
+`test/reference/naive_oracle_test.gleam` compares distance implementations with recursive definitions of Levenshtein, optimal string alignment, and LCS length on short strings with repeated letters, accents, and emoji. Damerau-Levenshtein is checked against distance bounds, and `longest_common_subsequence` must return a common subsequence of maximal length. The legacy reference keeps its independent v0.9.0 algorithms, including Jaro's rounded-down transposition count, which the regression tests also check against rapidfuzz and jellyfish values.
 
 ## Unified diff round trip
 
@@ -24,9 +24,9 @@ Tests under `test/textmetrics/` cover each algorithm family through the public `
 
 ## Unicode generation and API boundaries
 
-The Unicode regressions cover unassigned code points, noncharacters, First/Last range interiors, and the Unicode 15.1 version boundary. They also check the effects on sentence counts, polysyllabic words, and SMOG's sentence minimum. The direct nonempty word-syllable fallback is tested separately from phrase counting.
+The Unicode regressions cover unassigned code points, noncharacters, First/Last range interiors, and letters assigned after Unicode 15.1. Word boundary tests cover the UAX #29 rules for apostrophes, periods, and commas inside words and numbers and for format characters; sentence tests cover quotation marks and brackets after a terminator. They also check the effects on sentence counts, polysyllabic words, and SMOG's sentence minimum. The direct nonempty word-syllable fallback is tested separately from phrase counting.
 
-`scripts/test_gen_unicode_category.py` tests the fixed-data generator, malformed ranges, and output preservation and temporary-file cleanup on failure. The regeneration commands are in CONTRIBUTING.md. During the API refactor, an independent parser compared the generated Gleam function with the fixed Unicode data over all 1,113,984 code points above U+007F on both targets; there were no differences.
+`scripts/test_gen_unicode_category.py` tests the fixed-data generator, malformed ranges, and output preservation and temporary-file cleanup on failure. The regeneration commands are in CONTRIBUTING.md. After the Unicode 17.0 update, every generated function was compared with the fixed Unicode data over all code points on both targets; there were no differences.
 
 The API validation tests cover Jaro-Winkler and unified diff error priority before empty or unchanged input shortcuts. Raw readability fixtures include values outside display ranges; separate assertions apply the caller's clamp. Generic list tests use integers and records as well as strings.
 
