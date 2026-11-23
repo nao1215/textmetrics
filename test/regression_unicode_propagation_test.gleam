@@ -51,27 +51,36 @@ pub fn nonempty_cn_has_no_word_but_keeps_sentence_and_word_fallback_test() {
   |> should.equal(#(0, 1, 1))
 }
 
-pub fn unicode_15_1_first_last_ranges_include_interior_and_last_test() {
-  // Extension I start/interior/end and a Hangul syllable range interior.
-  list.each(["\u{2EBF0}", "\u{2EBF1}", "\u{2EE5D}", "\u{AC01}"], fn(text) {
+pub fn unicode_17_first_last_ranges_include_interior_and_last_test() {
+  // Extension I start/interior/end, Extension J (new in 17.0) start/end,
+  // and a Hangul syllable range interior.
+  list.each(
+    [
+      "\u{2EBF0}",
+      "\u{2EBF1}",
+      "\u{2EE5D}",
+      "\u{31350}",
+      "\u{33479}",
+      "\u{AC01}",
+    ],
+    fn(text) {
+      #(textmetrics.count_words(text), textmetrics.count_characters(text))
+      |> should.equal(#(1, 1))
+    },
+  )
+}
+
+pub fn unicode_17_classifies_letters_assigned_after_15_1_test() {
+  // U+1C89 (16.0) and U+088F (17.0) were unassigned in 15.1.
+  list.each(["\u{1C89}", "\u{088F}"], fn(text) {
     #(textmetrics.count_words(text), textmetrics.count_characters(text))
     |> should.equal(#(1, 1))
   })
 }
 
-pub fn unicode_15_1_does_not_classify_a_later_assigned_letter_test() {
-  // U+1C89 is Cn in 15.1; a host Unicode 16 database would make it Lu.
-  #(
-    textmetrics.count_words("\u{1C89}"),
-    textmetrics.count_characters("\u{1C89}"),
-  )
-  |> should.equal(#(0, 0))
-}
-
-pub fn unicode_15_1_first_last_range_stops_at_its_last_codepoint_test() {
-  #(
-    textmetrics.count_words("\u{2EE5E}"),
-    textmetrics.count_characters("\u{2EE5E}"),
-  )
-  |> should.equal(#(0, 0))
+pub fn unicode_17_unassigned_code_points_separate_words_test() {
+  list.each(["\u{1C8B}", "\u{2EE5E}", "\u{3347A}"], fn(text) {
+    #(textmetrics.count_words(text), textmetrics.count_characters(text))
+    |> should.equal(#(0, 0))
+  })
 }
