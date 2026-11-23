@@ -1,5 +1,5 @@
 name = "textmetrics"
-version = "0.11.0"
+version = "0.12.0"
 description = "Text comparisons, diffs, counts, and English readability for Gleam"
 licences = ["MIT"]
 repository = { type = "github", user = "nao1215", repo = "textmetrics" }
