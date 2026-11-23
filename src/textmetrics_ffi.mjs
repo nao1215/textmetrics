@@ -8,3 +8,17 @@
 export function to_nfc(s) {
   return s.normalize("NFC");
 }
+
+// Fixed-size arrays with constant-time reads for the Myers search. The
+// Gleam caller checks the index against `array_size` first.
+export function array_from_list(list) {
+  return list.toArray();
+}
+
+export function array_size(array) {
+  return array.length;
+}
+
+export function array_at(array, index) {
+  return array[index];
+}

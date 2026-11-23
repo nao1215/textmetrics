@@ -1,6 +1,6 @@
 //// Compare text, build edit scripts, and estimate English readability.
 ////
-//// String comparisons normalize to NFC using the target runtime and compare grapheme clusters. Generic list operations compare elements directly. Word and character classification uses Unicode 15.1 data; runtime normalization and grapheme segmentation may use another Unicode version.
+//// String comparisons normalize to NFC using the target runtime and compare grapheme clusters. Generic list operations compare elements directly. Word, character, and sentence classification uses Unicode 17.0 data; runtime normalization and grapheme segmentation may use another Unicode version.
 ////
 //// Readability functions return raw formula values and use an English syllable heuristic. Use `myers` or `patience` to build an edit script, then `to_unified` to render individual lines.
 
@@ -18,37 +18,22 @@ import textmetrics/internal/unicode_category
 
 // --- words --------------------------------------------------------------
 
-/// Count maximal runs of letter-like graphemes.
+/// Count words: runs of letter-like graphemes.
 ///
-/// After NFC normalization, accept a grapheme when its first code point has Unicode 15.1 category Letter, Mark, Decimal_Number, or Letter_Number. Whitespace, punctuation, symbols, unassigned code points, and other numbers such as `①` separate words. An ASCII digit followed within its grapheme by a keycap mark (U+20E3) or emoji presentation selector (U+FE0F) also separates words. Empty input returns zero.
+/// After NFC normalization, a grapheme is letter-like when its first code point has Unicode 17.0 category Letter, Mark, Decimal_Number, or Letter_Number. An ASCII digit followed within its grapheme by a keycap mark (U+20E3) or emoji presentation selector (U+FE0F) is not. Following UAX #29, the punctuation it allows between two letters, such as an apostrophe, colon, or period (`don't`, `U.S.A`), and between two digits, such as a period, comma, semicolon, or apostrophe (`3.50`, `1,000`), keeps one word. Format characters such as the soft hyphen do not split a word, and Word_Break=Numeric characters such as U+066B ARABIC DECIMAL SEPARATOR count as digits. Whitespace, other punctuation including hyphens, symbols, and unassigned code points separate words. Empty input returns zero.
 ///
 /// ## Examples
 ///
 /// ```gleam
 /// count_words("hello, world!")
 /// // 2
+/// count_words("don't stop")
+/// // 2
 /// count_words("")
 /// // 0
 /// ```
 pub fn count_words(text: String) -> Int {
-  let graphemes = nfc_graphemes(text)
-  count_runs(graphemes, False, 0)
-}
-
-fn count_runs(items: List(String), in_run: Bool, acc: Int) -> Int {
-  case items {
-    [] -> acc
-    [g, ..rest] -> {
-      case is_letter_like(g) {
-        True ->
-          case in_run {
-            True -> count_runs(rest, True, acc)
-            False -> count_runs(rest, True, acc + 1)
-          }
-        False -> count_runs(rest, False, acc)
-      }
-    }
-  }
+  fold_words(nfc_graphemes(text), 0, fn(count, _) { count + 1 })
 }
 
 fn is_letter_like(g: String) -> Bool {
@@ -56,7 +41,49 @@ fn is_letter_like(g: String) -> Bool {
     [] -> False
     [first, ..rest] -> {
       let code = string.utf_codepoint_to_int(first)
-      is_letter_like_code(code) && !is_emoji_sequence(code, rest)
+      case is_letter_like_code(code) {
+        True -> !is_emoji_sequence(code, rest)
+        // Word_Break=Numeric outside the letter-like categories, such as
+        // U+066B ARABIC DECIMAL SEPARATOR and the Prepend number signs
+        // U+0600..U+0605 that begin a grapheme with the digits after them.
+        False -> code >= 0x80 && unicode_category.is_word_numeric(code)
+      }
+    }
+  }
+}
+
+// How a grapheme takes part in a word, from its first code point.
+type WordClass {
+  WordLetter
+  WordDigit
+  // Word_Break=Format: ignored inside a word (UAX #29 WB4).
+  WordFormat
+  // Joins two letters (WB6, WB7).
+  JoinsLetters
+  // Joins two digits (WB11, WB12).
+  JoinsNumbers
+  JoinsBoth
+  WordSeparator
+}
+
+fn word_class(g: String) -> WordClass {
+  case string.to_utf_codepoints(g) {
+    [] -> WordSeparator
+    [first, ..rest] -> {
+      let code = string.utf_codepoint_to_int(first)
+      case is_letter_like_code(code) {
+        True ->
+          case is_emoji_sequence(code, rest), is_digit_code(code) {
+            True, _ -> WordSeparator
+            False, True -> WordDigit
+            False, False -> WordLetter
+          }
+        False ->
+          case code >= 0x80 && unicode_category.is_word_numeric(code) {
+            True -> WordDigit
+            False -> non_letter_class(code)
+          }
+      }
     }
   }
 }
@@ -73,6 +100,27 @@ fn is_letter_like_code(n: Int) -> Bool {
   }
 }
 
+fn is_digit_code(n: Int) -> Bool {
+  case n < 0x80 {
+    True -> n >= 0x30 && n <= 0x39
+    False -> unicode_category.is_word_numeric(n)
+  }
+}
+
+fn non_letter_class(n: Int) -> WordClass {
+  case
+    unicode_category.is_word_format(n),
+    unicode_category.joins_letters(n),
+    unicode_category.joins_numbers(n)
+  {
+    True, _, _ -> WordFormat
+    False, True, True -> JoinsBoth
+    False, True, False -> JoinsLetters
+    False, False, True -> JoinsNumbers
+    False, False, False -> WordSeparator
+  }
+}
+
 // Keep the existing digit emoji exclusion without discarding letters or
 // non-ASCII decimal digits that happen to carry the same suffix marks.
 fn is_emoji_sequence(first: Int, rest: List(UtfCodepoint)) -> Bool {
@@ -84,6 +132,97 @@ fn is_emoji_sequence(first: Int, rest: List(UtfCodepoint)) -> Bool {
   })
 }
 
+// The words of `graphemes`, each with the joining punctuation and format
+// characters inside it.
+fn word_chunks(graphemes: List(String)) -> List(String) {
+  fold_words(graphemes, [], fn(words, reversed) {
+    [reversed |> list.reverse |> string.concat, ..words]
+  })
+  |> list.reverse
+}
+
+// Calls `add` with each word's graphemes in reverse order.
+fn fold_words(
+  graphemes: List(String),
+  initial: acc,
+  add: fn(acc, List(String)) -> acc,
+) -> acc {
+  graphemes
+  |> list.map(fn(g) { #(g, word_class(g)) })
+  |> fold_words_loop([], WordSeparator, initial, add)
+}
+
+// `current` is the word so far in reverse, and `last` the class of its
+// last letter or digit.
+fn fold_words_loop(
+  items: List(#(String, WordClass)),
+  current: List(String),
+  last: WordClass,
+  acc: acc,
+  add: fn(acc, List(String)) -> acc,
+) -> acc {
+  case items {
+    [] -> finish_word(current, acc, add)
+    [#(g, class), ..rest] ->
+      case class, current {
+        WordLetter, _ | WordDigit, _ ->
+          fold_words_loop(rest, [g, ..current], class, acc, add)
+        WordFormat, [] -> fold_words_loop(rest, [], last, acc, add)
+        WordFormat, _ -> fold_words_loop(rest, [g, ..current], last, acc, add)
+        WordSeparator, _ | _, [] ->
+          fold_words_loop(
+            rest,
+            [],
+            WordSeparator,
+            finish_word(current, acc, add),
+            add,
+          )
+        joiner, _ ->
+          case joins(joiner, last, next_word_class(rest)) {
+            True -> fold_words_loop(rest, [g, ..current], last, acc, add)
+            False ->
+              fold_words_loop(
+                rest,
+                [],
+                WordSeparator,
+                finish_word(current, acc, add),
+                add,
+              )
+          }
+      }
+  }
+}
+
+fn finish_word(
+  current: List(String),
+  acc: acc,
+  add: fn(acc, List(String)) -> acc,
+) -> acc {
+  case current {
+    [] -> acc
+    _ -> add(acc, current)
+  }
+}
+
+fn next_word_class(items: List(#(String, WordClass))) -> WordClass {
+  case items {
+    [] -> WordSeparator
+    [#(_, WordFormat), ..rest] -> next_word_class(rest)
+    [#(_, class), ..] -> class
+  }
+}
+
+fn joins(joiner: WordClass, before: WordClass, after: WordClass) -> Bool {
+  case joiner, before, after {
+    JoinsLetters, WordLetter, WordLetter
+    | JoinsBoth, WordLetter, WordLetter
+    | JoinsNumbers, WordDigit, WordDigit
+    | JoinsBoth, WordDigit, WordDigit
+    -> True
+    _, _, _ -> False
+  }
+}
+
 fn nfc_graphemes(text: String) -> List(String) {
   string.to_graphemes(unicode.to_nfc(text))
 }
@@ -92,7 +231,7 @@ fn nfc_graphemes(text: String) -> List(String) {
 
 /// Count sentence boundaries and an unfinished final sentence.
 ///
-/// Recognize `.`, `!`, `?`, `…`, `。`, `．`, `！`, `？`, `।`, and `॥`. Consecutive terminators count as one boundary. A trailing nonempty fragment counts as a sentence. Empty input returns zero.
+/// Recognize `.`, `!`, `?`, `…`, `。`, `．`, `！`, `？`, `।`, and `॥`. Consecutive terminators count as one boundary, and quotation marks or brackets directly after a terminator belong to the sentence it ends, as in `He said "Hi."`. A trailing nonempty fragment counts as a sentence. Empty input returns zero.
 ///
 /// A period followed directly by a letter or digit does not end a sentence, as in `3.50` or `example.com`. Common English abbreviations such as `Dr.`, `Mrs.`, and weekday or month abbreviations also keep their period. For multi-period abbreviations such as `e.g.`, `p.m.`, and `U.S.A.`, a following capitalized word starts a new sentence; a lowercase word continues the current one.
 pub fn count_sentences(text: String) -> Int {
@@ -161,9 +300,29 @@ fn sentence_loop(
         }
         False, True -> sentence_loop(rest, saw_content, False, empty_word, acc)
         False, False ->
-          sentence_loop(rest, True, False, push_grapheme(current_word, g), acc)
+          case in_terminator && is_sentence_close(g) {
+            // Closing quotes and brackets belong to the sentence that
+            // just ended (UAX #29 SB9).
+            True -> sentence_loop(rest, saw_content, True, empty_word, acc)
+            False ->
+              sentence_loop(
+                rest,
+                True,
+                False,
+                push_grapheme(current_word, g),
+                acc,
+              )
+          }
       }
     }
+  }
+}
+
+fn is_sentence_close(g: String) -> Bool {
+  case string.to_utf_codepoints(g) {
+    [first, ..] ->
+      unicode_category.is_sentence_close(string.utf_codepoint_to_int(first))
+    [] -> False
   }
 }
 
@@ -278,8 +437,12 @@ fn is_multi_period_abbreviation(word: Word) -> Bool {
   word.periods >= 1 && word.parts_are_short_letters && word.part_length >= 1
 }
 
+// Looks past closing quotes and brackets as well as whitespace, so
+// `U.S.A." She` starts a new sentence.
 fn starts_capitalised(rest: List(String)) -> Bool {
-  case list.drop_while(rest, is_whitespace) {
+  case
+    list.drop_while(rest, fn(g) { is_whitespace(g) || is_sentence_close(g) })
+  {
     [next, ..] ->
       string.uppercase(next) == next && string.lowercase(next) != next
     [] -> False
@@ -445,38 +608,8 @@ fn last_three(items: List(String)) -> List(String) {
 ///
 /// Use `count_words`'s boundaries and `count_syllables_in_word`'s heuristic. Input without words returns zero.
 pub fn count_syllables(text: String) -> Int {
-  word_chunks(nfc_graphemes(text), [], [])
+  word_chunks(nfc_graphemes(text))
   |> list.fold(0, fn(acc, w) { acc + word_syllables(w) })
-}
-
-fn word_chunks(
-  items: List(String),
-  current: List(String),
-  acc: List(String),
-) -> List(String) {
-  case items {
-    [] ->
-      case current {
-        [] -> list.reverse(acc)
-        _ -> list.reverse([finish(current), ..acc])
-      }
-    [g, ..rest] -> {
-      case is_letter_like(g) {
-        True -> word_chunks(rest, [g, ..current], acc)
-        False ->
-          case current {
-            [] -> word_chunks(rest, [], acc)
-            _ -> word_chunks(rest, [], [finish(current), ..acc])
-          }
-      }
-    }
-  }
-}
-
-fn finish(chunk: List(String)) -> String {
-  chunk
-  |> list.reverse
-  |> string.concat
 }
 
 // --- characters / polysyllables / paragraphs ----------------------------
@@ -502,7 +635,7 @@ fn characters_from_graphemes(graphemes: List(String)) -> Int {
 ///
 /// Use the same word boundaries and syllable heuristic as `count_syllables`. Do not exclude proper nouns or inflected words.
 pub fn count_polysyllables(text: String) -> Int {
-  word_chunks(nfc_graphemes(text), [], [])
+  word_chunks(nfc_graphemes(text))
   |> list.fold(0, fn(acc, w) {
     case word_syllables(w) >= 3 {
       True -> acc + 1
@@ -671,7 +804,7 @@ fn damerau_levenshtein_rows(
   b: List(t),
   i: Int,
   previous: List(Int),
-  rows_before_last: Dict(t, #(Int, Dict(Int, Int))),
+  rows_before_last: Dict(t, #(Int, Array(Int))),
 ) -> Int {
   case remaining_a, previous {
     [], _ -> last_or_zero(previous)
@@ -685,16 +818,12 @@ fn damerau_levenshtein_rows(
           i,
           [i],
         )
-      let indexed_previous =
-        previous
-        |> list.index_map(fn(value, column) { #(column, value) })
-        |> dict.from_list
       damerau_levenshtein_rows(
         rest,
         b,
         i + 1,
         row,
-        dict.insert(rows_before_last, item, #(i, indexed_previous)),
+        dict.insert(rows_before_last, item, #(i, array_from_list(previous))),
       )
     }
     [_, ..], [] -> 0
@@ -705,7 +834,7 @@ type DamerauRow(t) {
   DamerauRow(
     item: t,
     i: Int,
-    rows_before_last: Dict(t, #(Int, Dict(Int, Int))),
+    rows_before_last: Dict(t, #(Int, Array(Int))),
     j: Int,
     // The last column `j' < j` of this row where `b[j'] == item`, or 0.
     last_match_column: Int,
@@ -733,7 +862,7 @@ fn damerau_levenshtein_row(
       // last `item` in `b` (column `last_match_column`).
       let best = case dict.get(rows_before_last, item_b), last_match_column {
         Ok(#(k, row_before_k)), l if l > 0 ->
-          case dict.get(row_before_k, l - 1) {
+          case array_get(row_before_k, l - 1) {
             Ok(value) ->
               int.min(best, value + { i - k - 1 } + 1 + { j - l - 1 })
             Error(Nil) -> best
@@ -771,17 +900,18 @@ fn osa_graphemes(a: List(String), b: List(String)) -> Int {
     0, _ -> n
     _, 0 -> m
     // OSA is symmetric; the shorter list sets the row length.
-    _, _ if m < n -> osa_rows(b, a, Error(Nil), int_range_inclusive(0, m), [])
-    _, _ -> osa_rows(a, b, Error(Nil), int_range_inclusive(0, n), [])
+    _, _ if m < n -> osa_rows(b, a, [], int_range_inclusive(0, m), [])
+    _, _ -> osa_rows(a, b, [], int_range_inclusive(0, n), [])
   }
 }
 
 // `previous` and `before_previous` are rows `i - 1` and `i - 2` of the
-// table; `previous_a` is `a[i - 1]`.
+// table; `previous_a` starts with `a[i - 1]`, or is empty in row 1.
+// Carrying list cells instead of `Result`s avoids an allocation per cell.
 fn osa_rows(
   remaining_a: List(t),
   b: List(t),
-  previous_a: Result(t, Nil),
+  previous_a: List(t),
   previous: List(Int),
   before_previous: List(Int),
 ) -> Int {
@@ -791,7 +921,7 @@ fn osa_rows(
       let i = previous_first + 1
       let row =
         osa_row(
-          OsaRow(item:, previous_a:, previous_b: Error(Nil), j: 1),
+          OsaRow(item:, previous_a:, previous_b: [], j: 1),
           b,
           previous_first,
           previous_rest,
@@ -799,19 +929,14 @@ fn osa_rows(
           i,
           [i],
         )
-      osa_rows(rest, b, Ok(item), row, previous)
+      osa_rows(rest, b, remaining_a, row, previous)
     }
     [_, ..], [] -> 0
   }
 }
 
 type OsaRow(t) {
-  OsaRow(
-    item: t,
-    previous_a: Result(t, Nil),
-    previous_b: Result(t, Nil),
-    j: Int,
-  )
+  OsaRow(item: t, previous_a: List(t), previous_b: List(t), j: Int)
 }
 
 // `two_back` starts at column `j - 2` of row `i - 2` once `j >= 2`.
@@ -835,7 +960,7 @@ fn osa_row(
       let #(best, two_back) = case j >= 2, two_back {
         True, [diagonal_two_back, ..two_back_rest] -> {
           let best = case previous_a, previous_b {
-            Ok(before_item), Ok(before_item_b)
+            [before_item, ..], [before_item_b, ..]
               if item == before_item_b && before_item == item_b
             -> int.min(best, diagonal_two_back + 1)
             _, _ -> best
@@ -845,7 +970,7 @@ fn osa_row(
         _, _ -> #(best, two_back)
       }
       osa_row(
-        OsaRow(..state, previous_b: Ok(item_b), j: j + 1),
+        OsaRow(..state, previous_b: b, j: j + 1),
         b_rest,
         above,
         previous_more,
@@ -928,7 +1053,7 @@ pub type JaroWinklerError {
 
 /// Calculate Jaro similarity over NFC-normalized graphemes.
 ///
-/// Return a score from zero to one based on matching graphemes and half the mismatches in their matched sequences. Two empty inputs return `1.0`; exactly one empty input returns `0.0`.
+/// Return a score from zero to one based on matching graphemes and the transpositions between their matched sequences. A transposition count is half the mismatched positions, rounded down, as in Winkler's reference code and the rapidfuzz and jellyfish libraries. Two empty inputs return `1.0`; exactly one empty input returns `0.0`.
 pub fn jaro(left: String, right: String) -> Float {
   jaro_graphemes(nfc_graphemes(left), nfc_graphemes(right))
 }
@@ -1003,11 +1128,7 @@ pub fn sorensen_dice(
   }
 }
 
-// ---------------------------------------------------------------------
-// Jaro internals
-// ---------------------------------------------------------------------
-// Sørensen-Dice internals
-// ---------------------------------------------------------------------
+// --- Sørensen-Dice internals ---------------------------------------------
 
 fn build_ngrams(graphemes: List(String), size: Int) -> List(String) {
   list.window(graphemes, by: size) |> list.map(string.concat)
@@ -1030,10 +1151,6 @@ fn intersection_size(a: Dict(String, Int), b: Dict(String, Int)) -> Int {
     }
   })
 }
-
-// ---------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------
 
 /// Return the length of a longest subsequence shared by two lists.
 ///
@@ -1409,10 +1526,12 @@ fn take_while_delete(
   }
 }
 
-/// Report an invalid filename or context-line count for unified diff output.
+/// Report an invalid filename, context-line count, or line for unified diff output.
 pub type UnifiedError {
   ContextLinesNegative(got: Int)
   NameContainsForbiddenBytes(field: NameField, value: String)
+  /// A script element contained a line feed, so it was not a single line.
+  LineContainsNewline(line: String)
 }
 
 /// Identify the old or new filename rejected by unified diff validation.
@@ -1420,16 +1539,6 @@ pub type NameField {
   OldName
   NewName
 }
-
-// The unified-diff header — `--- <old_name>\n+++ <new_name>\n` — is
-// line-oriented and tab-delimited from the optional trailing date,
-// so embedded `\n` / `\r` break the header into multiple physical
-// lines that downstream `patch(1)` / `git apply` reject. NUL bytes
-// truncate the line for any POSIX C string consumer. Tabs are
-// folded into the same set because `diff -u` uses them to separate
-// the filename from the date stamp.
-// Filters by code point rather than grapheme: "\r\n" is a single
-// grapheme cluster and would slip through a grapheme-wise filter.
 
 /// Build a shortest insertion-and-deletion edit script between two lists.
 ///
@@ -1467,225 +1576,215 @@ fn myers_middle(old: List(a), new: List(a)) -> List(Edit(a)) {
     0, _ -> list.map(new, fn(item) { Insert(item) })
     _, 0 -> list.map(old, fn(item) { Delete(item) })
     _, _ -> {
-      let indexed_old = list_to_dict(old)
-      let indexed_new = list_to_dict(new)
-      let initial_frontier = dict.insert(dict.new(), 1, 0)
-      let max_d = old_length + new_length
-      let MyersResult(trace, final_x, final_y) =
-        myers_search(
-          indexed_old,
-          indexed_new,
-          old_length,
-          new_length,
-          max_d,
-          0,
-          initial_frontier,
-          [],
+      let sides =
+        Sides(
+          old: array_from_list(old),
+          new: array_from_list(new),
+          old_length:,
+          new_length:,
         )
-      let trace_count = list.length(trace)
+      // Every `interval`-th frontier is kept; the backtrack recomputes the
+      // frontiers between two checkpoints when it reaches them. This keeps
+      // memory near O(D * sqrt(n + m)) instead of O(D^2).
+      let interval = block_size(old_length + new_length, 1)
+      let #(final_d, final_x, final_y, checkpoints) =
+        myers_search(sides, interval, 0, Error(Nil), [])
       myers_backtrack(
-        indexed_old,
-        indexed_new,
-        trace,
-        trace_count - 1,
+        sides,
+        checkpoints,
+        final_d,
         final_x,
         final_y,
+        final_d,
         [],
       )
     }
   }
 }
 
-type MyersResult {
-  MyersResult(trace: List(Dict(Int, Int)), final_x: Int, final_y: Int)
+type Sides(a) {
+  Sides(old: Array(a), new: Array(a), old_length: Int, new_length: Int)
 }
 
-type MyersStep {
-  Complete(final_x: Int, final_y: Int)
-  Continue(frontier: Dict(Int, Int))
+// The furthest-reaching x of every diagonal `k = -d, -d + 2, .., d` after
+// `d` steps, at index `(k + d) / 2`.
+type Frontier {
+  Frontier(d: Int, xs: Array(Int))
 }
 
-fn myers_search(
-  indexed_old: Dict(Int, a),
-  indexed_new: Dict(Int, a),
-  old_length: Int,
-  new_length: Int,
-  max_d: Int,
-  d: Int,
-  frontier: Dict(Int, Int),
-  trace_acc: List(Dict(Int, Int)),
-) -> MyersResult {
-  let updated_trace = [frontier, ..trace_acc]
-  case d > max_d {
-    True -> MyersResult(updated_trace, old_length, new_length)
-    False ->
-      case
-        myers_d_step(
-          indexed_old,
-          indexed_new,
-          old_length,
-          new_length,
-          d,
-          -d,
-          frontier,
-        )
-      {
-        Complete(final_x, final_y) ->
-          MyersResult(updated_trace, final_x, final_y)
-        Continue(updated_frontier) ->
-          myers_search(
-            indexed_old,
-            indexed_new,
-            old_length,
-            new_length,
-            max_d,
-            d + 1,
-            updated_frontier,
-            updated_trace,
-          )
-      }
+fn frontier_get(frontier: Frontier, k: Int, default: Int) -> Int {
+  let offset = k + frontier.d
+  let index = offset / 2
+  case offset >= 0 && offset % 2 == 0 && index < array_size(frontier.xs) {
+    True -> array_at(frontier.xs, index)
+    False -> default
   }
 }
 
-fn myers_d_step(
-  indexed_old: Dict(Int, a),
-  indexed_new: Dict(Int, a),
-  old_length: Int,
-  new_length: Int,
+// Returns the number of steps, the end point, and the checkpoints with
+// the latest first.
+fn myers_search(
+  sides: Sides(a),
+  interval: Int,
   d: Int,
-  k: Int,
-  frontier: Dict(Int, Int),
-) -> MyersStep {
-  case k > d {
-    True -> Continue(frontier)
-    False -> {
-      let previous_diagonal = result.unwrap(dict.get(frontier, k - 1), -1)
-      let next_diagonal = result.unwrap(dict.get(frontier, k + 1), -1)
-      let from_above =
-        k == -d || { k != d && previous_diagonal < next_diagonal }
-      let x = case from_above {
-        True -> next_diagonal
-        False -> previous_diagonal + 1
+  previous: Result(Frontier, Nil),
+  checkpoints: List(Frontier),
+) -> #(Int, Int, Int, List(Frontier)) {
+  case myers_step(sides, d, previous, -d, []) {
+    Error(#(final_x, final_y)) -> #(d, final_x, final_y, checkpoints)
+    Ok(frontier) -> {
+      let checkpoints = case d % interval {
+        0 -> [frontier, ..checkpoints]
+        _ -> checkpoints
       }
-      let y = x - k
-      let #(final_x, final_y) =
-        follow_snake(indexed_old, indexed_new, old_length, new_length, x, y)
-      case final_x >= old_length && final_y >= new_length {
-        True -> Complete(final_x, final_y)
-        False ->
-          myers_d_step(
-            indexed_old,
-            indexed_new,
-            old_length,
-            new_length,
-            d,
-            k + 2,
-            dict.insert(frontier, k, final_x),
-          )
+      myers_search(sides, interval, d + 1, Ok(frontier), checkpoints)
+    }
+  }
+}
+
+// The frontier after step `d`, or `Error` with the end point when a
+// diagonal reaches it.
+fn myers_step(
+  sides: Sides(a),
+  d: Int,
+  previous: Result(Frontier, Nil),
+  k: Int,
+  reversed_xs: List(Int),
+) -> Result(Frontier, #(Int, Int)) {
+  case k > d {
+    True -> Ok(Frontier(d:, xs: array_from_list(list.reverse(reversed_xs))))
+    False -> {
+      let x = case previous {
+        // Before the first step only diagonal 1 is known, at x = 0.
+        Error(Nil) -> 0
+        Ok(frontier) -> {
+          let previous_diagonal = frontier_get(frontier, k - 1, -1)
+          let next_diagonal = frontier_get(frontier, k + 1, -1)
+          case k == -d || { k != d && previous_diagonal < next_diagonal } {
+            True -> next_diagonal
+            False -> previous_diagonal + 1
+          }
+        }
+      }
+      let #(final_x, final_y) = follow_snake(sides, x, x - k)
+      case final_x >= sides.old_length && final_y >= sides.new_length {
+        True -> Error(#(final_x, final_y))
+        False -> myers_step(sides, d, previous, k + 2, [final_x, ..reversed_xs])
       }
     }
   }
 }
 
-fn follow_snake(
-  indexed_old: Dict(Int, a),
-  indexed_new: Dict(Int, a),
-  old_length: Int,
-  new_length: Int,
-  x: Int,
-  y: Int,
-) -> #(Int, Int) {
-  case x < old_length && y < new_length {
+fn follow_snake(sides: Sides(a), x: Int, y: Int) -> #(Int, Int) {
+  case x >= 0 && y >= 0 && x < sides.old_length && y < sides.new_length {
     False -> #(x, y)
+    // Both indices are in range here.
     True ->
-      case dict.get(indexed_old, x), dict.get(indexed_new, y) {
-        Ok(ax), Ok(by) ->
-          case ax == by {
-            True ->
-              follow_snake(
-                indexed_old,
-                indexed_new,
-                old_length,
-                new_length,
-                x + 1,
-                y + 1,
-              )
-            False -> #(x, y)
-          }
-        _, _ -> #(x, y)
+      case array_at(sides.old, x) == array_at(sides.new, y) {
+        True -> follow_snake(sides, x + 1, y + 1)
+        False -> #(x, y)
       }
   }
 }
 
+// Walks back from step `d` at `(x, y)`. `checkpoints` (latest first) hold
+// frontiers up to `available`; the frontiers in between are rebuilt one
+// block at a time.
 fn myers_backtrack(
-  indexed_old: Dict(Int, a),
-  indexed_new: Dict(Int, a),
-  trace: List(Dict(Int, Int)),
+  sides: Sides(a),
+  checkpoints: List(Frontier),
+  d: Int,
+  x: Int,
+  y: Int,
+  available: Int,
+  acc: List(Edit(a)),
+) -> List(Edit(a)) {
+  case d, checkpoints {
+    0, _ | _, [] -> walk_diagonal_back(sides, x, y, 0, 0, acc).2
+    _, [checkpoint, ..earlier] -> {
+      // Frontiers `available - 1` down to the checkpoint, latest first.
+      let block =
+        rebuild_frontiers(sides, checkpoint, available - 1, [checkpoint])
+      let #(d, x, y, acc) = myers_backtrack_block(sides, block, d, x, y, acc)
+      myers_backtrack(sides, earlier, d, x, y, checkpoint.d, acc)
+    }
+  }
+}
+
+fn rebuild_frontiers(
+  sides: Sides(a),
+  latest: Frontier,
+  last: Int,
+  acc: List(Frontier),
+) -> List(Frontier) {
+  case latest.d >= last {
+    True -> acc
+    False ->
+      case myers_step(sides, latest.d + 1, Ok(latest), -latest.d - 1, []) {
+        Ok(next) -> rebuild_frontiers(sides, next, last, [next, ..acc])
+        // Only the final step reaches the end, and it is never rebuilt.
+        Error(_) -> acc
+      }
+  }
+}
+
+// `frontiers` starts with the frontier after step `d - 1`.
+fn myers_backtrack_block(
+  sides: Sides(a),
+  frontiers: List(Frontier),
   d: Int,
   x: Int,
   y: Int,
   acc: List(Edit(a)),
-) -> List(Edit(a)) {
-  case d {
-    0 -> walk_origin_back(indexed_old, x, y, acc)
-    _ ->
-      case trace {
-        [frontier, ..rest] -> {
-          let k = x - y
-          let previous_diagonal = result.unwrap(dict.get(frontier, k - 1), -1)
-          let next_diagonal = result.unwrap(dict.get(frontier, k + 1), -1)
-          let from_above =
-            k == -d || { k != d && previous_diagonal < next_diagonal }
-          let prev_k = case from_above {
-            True -> k + 1
-            False -> k - 1
-          }
-          let prev_x = result.unwrap(dict.get(frontier, prev_k), 0)
-          let prev_y = prev_x - prev_k
-          let #(x2, y2, acc2) =
-            walk_diag_back(indexed_old, x, y, prev_x, prev_y, acc)
-          let #(next_x, next_y, acc3) = case x2 > prev_x, y2 > prev_y {
-            True, _ ->
-              case dict.get(indexed_old, x2 - 1) {
-                Ok(item) -> #(x2 - 1, y2, [Delete(item), ..acc2])
-                Error(_) -> #(prev_x, prev_y, acc2)
-              }
-            False, True ->
-              case dict.get(indexed_new, y2 - 1) {
-                Ok(item) -> #(x2, y2 - 1, [Insert(item), ..acc2])
-                Error(_) -> #(prev_x, prev_y, acc2)
-              }
-            False, False -> #(prev_x, prev_y, acc2)
-          }
-          myers_backtrack(
-            indexed_old,
-            indexed_new,
-            rest,
-            d - 1,
-            next_x,
-            next_y,
-            acc3,
-          )
-        }
-        [] -> walk_origin_back(indexed_old, x, y, acc)
+) -> #(Int, Int, Int, List(Edit(a))) {
+  case d, frontiers {
+    0, _ | _, [] -> #(d, x, y, acc)
+    _, [frontier, ..earlier] -> {
+      let k = x - y
+      let previous_diagonal = frontier_get(frontier, k - 1, -1)
+      let next_diagonal = frontier_get(frontier, k + 1, -1)
+      let previous_k = case
+        k == -d || { k != d && previous_diagonal < next_diagonal }
+      {
+        True -> k + 1
+        False -> k - 1
       }
+      let previous_x = frontier_get(frontier, previous_k, 0)
+      let previous_y = previous_x - previous_k
+      let #(x2, y2, acc) =
+        walk_diagonal_back(sides, x, y, previous_x, previous_y, acc)
+      let #(x, y, acc) = case x2 > previous_x, y2 > previous_y {
+        True, _ ->
+          case array_get(sides.old, x2 - 1) {
+            Ok(item) -> #(x2 - 1, y2, [Delete(item), ..acc])
+            Error(_) -> #(previous_x, previous_y, acc)
+          }
+        False, True ->
+          case array_get(sides.new, y2 - 1) {
+            Ok(item) -> #(x2, y2 - 1, [Insert(item), ..acc])
+            Error(_) -> #(previous_x, previous_y, acc)
+          }
+        False, False -> #(previous_x, previous_y, acc)
+      }
+      myers_backtrack_block(sides, earlier, d - 1, x, y, acc)
+    }
   }
 }
 
-fn walk_diag_back(
-  indexed_old: Dict(Int, a),
+fn walk_diagonal_back(
+  sides: Sides(a),
   x: Int,
   y: Int,
-  lo_x: Int,
-  lo_y: Int,
+  low_x: Int,
+  low_y: Int,
   acc: List(Edit(a)),
 ) -> #(Int, Int, List(Edit(a))) {
-  case x > lo_x && y > lo_y {
+  case x > low_x && y > low_y {
     False -> #(x, y, acc)
     True ->
-      case dict.get(indexed_old, x - 1) {
+      case array_get(sides.old, x - 1) {
         Ok(item) ->
-          walk_diag_back(indexed_old, x - 1, y - 1, lo_x, lo_y, [
+          walk_diagonal_back(sides, x - 1, y - 1, low_x, low_y, [
             Equal(item),
             ..acc
           ])
@@ -1694,20 +1793,27 @@ fn walk_diag_back(
   }
 }
 
-fn walk_origin_back(
-  indexed_old: Dict(Int, a),
-  x: Int,
-  y: Int,
-  acc: List(Edit(a)),
-) -> List(Edit(a)) {
-  case x > 0 && y > 0 {
-    False -> acc
-    True ->
-      case dict.get(indexed_old, x - 1) {
-        Ok(item) ->
-          walk_origin_back(indexed_old, x - 1, y - 1, [Equal(item), ..acc])
-        Error(_) -> acc
-      }
+// A fixed-size array with constant-time reads: a tuple on Erlang and an
+// Array on JavaScript.
+type Array(a)
+
+@external(erlang, "textmetrics_ffi", "array_from_list")
+@external(javascript, "./textmetrics_ffi.mjs", "array_from_list")
+fn array_from_list(items: List(a)) -> Array(a)
+
+@external(erlang, "textmetrics_ffi", "array_size")
+@external(javascript, "./textmetrics_ffi.mjs", "array_size")
+fn array_size(array: Array(a)) -> Int
+
+// Reads an index that the caller has checked against `array_size`.
+@external(erlang, "textmetrics_ffi", "array_at")
+@external(javascript, "./textmetrics_ffi.mjs", "array_at")
+fn array_at(array: Array(a), index: Int) -> a
+
+fn array_get(array: Array(a), index: Int) -> Result(a, Nil) {
+  case index >= 0 && index < array_size(array) {
+    True -> Ok(array_at(array, index))
+    False -> Error(Nil)
   }
 }
 
@@ -1916,9 +2022,9 @@ fn collect_lis(
 
 /// Render an edit script of individual lines as a unified diff.
 ///
-/// Each element must be one line without a line terminator. Output uses LF-terminated lines and does not retain whether an input file lacked its final newline.
+/// Each element must be one line without its line terminator; a carriage return is kept as part of the line. To diff two texts, split each on `"\n"` and drop the empty element that a final newline leaves. Output uses LF-terminated lines and does not mark a file that lacked its final newline.
 ///
-/// Reject filenames containing LF, CR, NUL, or tab, and reject a negative context count. Validate the old name, new name, then context count, even for an unchanged script. Zero context is valid. An unchanged script returns `Ok("")`.
+/// Reject filenames containing LF, CR, NUL, or tab, a negative context count, and an element containing LF. Validate the old name, new name, context count, then the elements in order, even for an unchanged script. Zero context is valid. An unchanged script returns `Ok("")`.
 pub fn to_unified(
   script: List(Edit(String)),
   old_name old_name: String,
@@ -1931,6 +2037,7 @@ pub fn to_unified(
     True -> Error(ContextLinesNegative(context))
     False -> Ok(Nil)
   })
+  use _ <- result.try(validate_unified_lines(script))
   case has_changes(script) {
     False -> Ok("")
     True -> {
@@ -1942,6 +2049,16 @@ pub fn to_unified(
     }
   }
 }
+
+// The unified-diff header — `--- <old_name>\n+++ <new_name>\n` — is
+// line-oriented and tab-delimited from the optional trailing date,
+// so embedded `\n` / `\r` break the header into multiple physical
+// lines that downstream `patch(1)` / `git apply` reject. NUL bytes
+// truncate the line for any POSIX C string consumer. Tabs are
+// folded into the same set because `diff -u` uses them to separate
+// the filename from the date stamp.
+// `string.contains` matches code points rather than graphemes: "\r\n" is a single
+// grapheme cluster and would slip through a grapheme-wise check.
 
 fn validate_unified_name(
   field: NameField,
@@ -1955,6 +2072,19 @@ fn validate_unified_name(
   {
     True -> Error(NameContainsForbiddenBytes(field, name))
     False -> Ok(Nil)
+  }
+}
+
+fn validate_unified_lines(
+  script: List(Edit(String)),
+) -> Result(Nil, UnifiedError) {
+  case script {
+    [] -> Ok(Nil)
+    [edit, ..rest] ->
+      case string.contains(edit.item, "\n") {
+        True -> Error(LineContainsNewline(edit.item))
+        False -> validate_unified_lines(rest)
+      }
   }
 }
 
@@ -2134,21 +2264,6 @@ fn event_to_line(event: LineEvent) -> String {
   }
 }
 
-fn list_to_dict(items: List(t)) -> Dict(Int, t) {
-  list_to_dict_loop(items, 0, dict.new())
-}
-
-fn list_to_dict_loop(
-  items: List(t),
-  i: Int,
-  acc: Dict(Int, t),
-) -> Dict(Int, t) {
-  case items {
-    [] -> acc
-    [x, ..rest] -> list_to_dict_loop(rest, i + 1, dict.insert(acc, i, x))
-  }
-}
-
 /// Pair an original candidate string with its similarity score.
 pub type Ranked {
   Ranked(label: String, score: Float)
@@ -2242,7 +2357,7 @@ type Counts {
 
 fn build_counts(text: String) -> Counts {
   let graphemes = nfc_graphemes(text)
-  let words = word_chunks(graphemes, [], [])
+  let words = word_chunks(graphemes)
   let #(syllables, polysyllables) =
     list.fold(words, #(0, 0), fn(totals, word) {
       let syllables = word_syllables(word)
@@ -2467,7 +2582,8 @@ fn jaro_graphemes(
             list.map2(left_matches, right_matches, fn(x, y) { x != y })
             |> list.count(fn(differs) { differs })
           let matches = int.to_float(list.length(left_matches))
-          let transpositions = int.to_float(half_transpositions) /. 2.0
+          // Half the mismatches, rounded down, as in Winkler's strcmp95.
+          let transpositions = int.to_float(half_transpositions / 2)
           {
             matches
             /. int.to_float(left_length)

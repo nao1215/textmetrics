@@ -84,6 +84,8 @@ fn small_line_list() -> generator.Generator(List(String)) {
     generator.string_alphanumeric(range.constant(0, 3)),
     range.constant(0, 5),
   )
+  // Script elements are single lines; `to_unified` rejects line feeds.
+  |> generator.map(list.map(_, string.replace(_, "\n", "")))
   |> generator.with_examples(line_examples)
 }
 
