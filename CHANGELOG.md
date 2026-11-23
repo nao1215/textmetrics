@@ -7,6 +7,8 @@ and this project is expected to follow [Semantic Versioning](https://semver.org/
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-23
+
 ### Changed
 
 - Breaking: `to_unified` returns `Error(LineContainsNewline(line))` when a script element contains a line feed. Such an element used to render as two diff lines behind one prefix, which `patch` applies to the wrong lines. Elements are still checked after the names and context count, including for unchanged scripts. Carriage returns stay part of the line.
