@@ -208,3 +208,64 @@ pub fn words_deterministic_test() -> Nil {
   textmetrics.count_words(text)
   |> should.equal(textmetrics.count_words(text))
 }
+
+// --- boundaries found by mutation testing ---------------------------------
+
+pub fn paragraphs_keep_consecutive_lines_together_test() -> Nil {
+  assert textmetrics.count_paragraphs("a\nb") == 1
+  assert textmetrics.count_paragraphs("a\nb\nc\n\nd\ne") == 2
+}
+
+pub fn syllables_drop_a_silent_e_after_a_consonant_test() -> Nil {
+  assert textmetrics.count_syllables_in_word("make") == 1
+}
+
+pub fn syllables_treat_y_before_le_as_a_vowel_test() -> Nil {
+  // "...yle" counts the `y`, so the final `e` is silent.
+  assert textmetrics.count_syllables_in_word("style") == 1
+}
+
+pub fn syllables_keep_the_e_after_a_noninitial_y_test() -> Nil {
+  assert textmetrics.count_syllables_in_word("goodbye") == 2
+}
+
+pub fn syllables_do_not_count_an_initial_y_test() -> Nil {
+  assert textmetrics.count_syllables_in_word("Ypres") == 1
+}
+
+pub fn words_join_digits_up_to_nine_test() -> Nil {
+  assert textmetrics.count_words("1,9") == 1
+  assert textmetrics.count_words("9.0") == 1
+}
+
+pub fn words_skip_keycap_emoji_test() -> Nil {
+  assert textmetrics.count_words("0\u{FE0F}\u{20E3}") == 0
+  assert textmetrics.count_words("9\u{FE0F}\u{20E3}") == 0
+}
+
+pub fn sentences_recognise_month_and_day_abbreviations_test() -> Nil {
+  assert textmetrics.count_sentences("Paid in Dec. and kept.") == 1
+  assert textmetrics.count_sentences("Open on Sat. and closed.") == 1
+}
+
+pub fn sentences_continue_after_e_g_before_a_digit_test() -> Nil {
+  // A caseless grapheme after a multi-period abbreviation is not a
+  // capital letter, so the sentence goes on.
+  assert textmetrics.count_sentences("Buy e.g. 5 apples.") == 1
+}
+
+pub fn sentences_skip_unicode_spaces_before_a_capital_test() -> Nil {
+  assert textmetrics.count_sentences("We met in the U.S.\u{2000}She left.") == 2
+  assert textmetrics.count_sentences("We met in the U.S.\u{200A}She left.") == 2
+}
+
+pub fn sentences_keep_several_closing_marks_test() -> Nil {
+  assert textmetrics.count_sentences("He said (\"stop.\") Then he left.") == 2
+  assert textmetrics.count_sentences("He said (\"stop.\")") == 1
+}
+
+pub fn sentences_end_after_dotted_digits_test() -> Nil {
+  // Only one- or two-letter parts make a multi-period abbreviation, so
+  // the period after `1.2` ends the sentence.
+  assert textmetrics.count_sentences("Use 1.2. then stop.") == 2
+}

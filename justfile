@@ -71,5 +71,16 @@ all: clean deps
   @echo ""
   @echo "All checks passed."
 
+# Mutation testing of every module, failing on survivors the baseline lacks.
+# The generated Unicode table is left out. Slow: run it on a machine with
+# many cores, then `just mutation-record`.
+mutation workers="8":
+  gleam run -m metamon/mutation -- run --workers {{workers}} --exclude src/textmetrics/internal/unicode_category.gleam
+  gleam run -m metamon/mutation -- gate
+
+# Record the last full mutation run as the baseline and refresh doc/testing.md
+mutation-record:
+  gleam run -m metamon/mutation -- baseline
+
 clean:
   gleam clean

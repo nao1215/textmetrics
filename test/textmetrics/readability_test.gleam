@@ -151,3 +151,27 @@ pub fn all_metrics_return_finite_on_minimal_input_test() -> Nil {
   }
   Nil
 }
+
+// --- formulas with more than one sentence ---------------------------------
+
+// 5 words, 2 sentences and 4 polysyllables (`Readability`, `Computers`,
+// `calculate`, `everything`), so neither ratio of the formulas is 1.
+fn two_sentences() -> String {
+  "Readability matters. Computers calculate everything."
+}
+
+pub fn gunning_fog_divides_by_sentences_and_words_test() -> Nil {
+  assert textmetrics.count_words(two_sentences()) == 5
+  assert textmetrics.count_sentences(two_sentences()) == 2
+  assert textmetrics.count_polysyllables(two_sentences()) == 4
+  // 0.4 * (5 / 2 + 100 * 4 / 5)
+  let assert Ok(score) = textmetrics.gunning_fog(two_sentences())
+  assert within(score, 33.0, 1.0e-9)
+}
+
+pub fn smog_extrapolated_scales_polysyllables_to_30_sentences_test() -> Nil {
+  // 1.043 * sqrt(4 * 30 / 2) + 3.1291
+  let assert Ok(score) = textmetrics.smog_extrapolated(two_sentences())
+  let assert Ok(root) = float.square_root(60.0)
+  assert within(score, 1.043 *. root +. 3.1291, 1.0e-9)
+}

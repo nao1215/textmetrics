@@ -32,20 +32,27 @@ The API validation tests cover Jaro-Winkler and unified diff error priority befo
 
 ## Nightly runs
 
-`.github/workflows/nightly-property.yml` runs the whole suite ten times with `METAMON_RUNS_MULTIPLIER=10`, each pass with a new seed. A failure report prints its seed, so the case can be replayed with `metamon.with_seed` and kept as a regression test.
+`.github/workflows/nightly-property.yml` runs the whole suite ten times with `METAMON_RUNS_MULTIPLIER=10`, each pass with a new seed. A failure report prints its seed, so the case can be replayed with `Config(..default_config(), seed: Some(seed))` and kept as a regression test.
 
 ## Mutation testing
 
-Manual mutation checks use `gleam_mutate.py` from the mutation-testing lab in nao1215/debimate on a copy of the project. It rewrites one operator or boolean result at a time and runs `gleam test` on the Erlang target; a timeout beyond 120 seconds counts as killed. The recorded run also mutated integer comparisons and `+` / `-`. The score is killed / (killed + lived). The module names below describe the source layout at the time of that run.
+`gleam run -m metamon/mutation` changes one operator, `!` or boolean literal in a module under `src/` at a time and runs `gleam test --target erlang` on each change. `src/textmetrics/internal/unicode_category.gleam` is left out (`--exclude` in `.github/workflows/mutation.yml` and the justfile): it is generated from the Unicode data by `scripts/gen_unicode_category.py`, its 3,162 mutants are range bounds of that table, and they would make a full run take hours. `.github/workflows/mutation.yml` mutates the modules a pull request changes and fails on a survivor that `doc/mutation/baseline.json` does not list; the weekly run mutates every module. `just mutation` runs everything and `just mutation-record` writes the baseline.
 
-| Date | Files | Killed | Lived | Score |
-|---|---|---:|---:|---:|
-| 2026-11-19, first run | every module under `src/` with mutants (367) | 289 | 78 | 78.7% |
-| 2026-11-19, after the new tests | same | 294 | 73 | 80.1% |
+The first run (2026-11-27) scored 83.8%. Tests were then added for paragraphs of two and three lines, the silent `e` of `make`, `style` and `goodbye`, an initial `y` (`Ypres`), the digit `9` in a number and the keycaps `0` and `9`, month and day abbreviations, a digit after `e.g.`, Unicode spaces before a capital, closing marks at the end of the text, a period after dotted digits, a repeated bigram in Sorensen-Dice, and Gunning Fog and SMOG on two sentences with polysyllables, and the score rose to 88.4%. The 46 survivors left change nothing that a caller can see:
 
-The first run showed that no test counted the syllables of a word with à, ï, ô or ý, and that no Sørensen-Dice test used a string of exactly `n` graphemes; `syllables_count_each_latin1_accented_vowel_family_test` and `sorensen_dice_counts_the_one_ngram_of_a_string_of_length_n_test` now kill those mutants. The survivors, grouped:
+- The empty case of a grapheme or of the rest of the text (7): a grapheme always has a code point, and at the end of the text the last sentence is counted either way.
+- Code point bounds that no input reaches (6): U+0080 is neither a letter nor a digit, U+2000 becomes U+2002 under NFC before the whitespace check, and the start-of-word flag of the accented vowel check only matters for the ASCII `y`.
+- The length of an abbreviation token (2): it is only compared with 5, the longest abbreviation.
+- Distances (3): swapping two inputs of the same length, which the distances do not depend on, and a transposition read at column 0, which `array_get` rejects anyway.
+- Mutants that loop forever (4): `int_range_inclusive_loop`, `myers_search`, `myers_step` and `rebuild_frontiers` stepping the wrong way. A run kills them when the test suite times out, but on a machine where earlyoom stops a runaway BEAM with SIGTERM, the BEAM exits with status 0 and the run reports them as lived. Two runs after the new tests gave different results for `myers_step`, so the baseline lists all four as lived and the gate does not depend on the machine.
+- The linear-memory LCS (8) and Myers search (8): checkpoint spacing changes only how much is kept in memory, and the other guards change no result that the exact comparison with v0.9.0, the replay and optimality relations and the unified diff round trip can see.
+- Array reads past the end (2), which never happen.
+- Patience (3): a line count that never returns to 1 once it has passed it, and two comparisons of line indices, which are distinct.
+- Search and similarity (3): `top_n` of exactly 0, which takes nothing either way, a Jaro score of exactly 0.7, which the floating-point formula does not produce, and the end of the Jaro match window past the last grapheme.
 
-- `diff` (28): bounds and tie-breaks inside the Myers and Patience searches. Most produce a different but still optimal edit script, which every relation accepts (it replays, its cost equals the LCS bound, its unified diff applies with minimal context). A test would have to pin one particular optimal script.
-- `count` (32): the upper-case accented vowels (the pipeline lowercases first, so they are unreachable), the abbreviation and capitalisation heuristics of sentence splitting, and Unicode letter ranges that no test text reaches.
-- `lcs` (3) and `distance` (4): which of several longest common subsequences the backtrack returns, `max` on equal lengths, and matrix cells that are initialised but never read.
-- `similarity` (5) and `readability` (1): loop bounds that read one index past the end and fall back to a default, and a clamp at its exact bound.
+<!-- mutation:start -->
+| Module | Killed | Lived | Timed out | Score |
+|---|---:|---:|---:|---:|
+| `textmetrics` | 348 | 46 | 1 | 88.4% |
+| all | 348 | 46 | 1 | 88.4% |
+<!-- mutation:end -->
