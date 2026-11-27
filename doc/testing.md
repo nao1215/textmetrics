@@ -53,6 +53,6 @@ The first run (2026-11-27) scored 83.8%. Tests were then added for paragraphs of
 <!-- mutation:start -->
 | Module | Killed | Lived | Timed out | Score |
 |---|---:|---:|---:|---:|
-| `textmetrics` | 348 | 46 | 1 | 88.4% |
-| all | 348 | 46 | 1 | 88.4% |
+| `textmetrics` | 345 | 49 | 1 | 87.6% |
+| all | 345 | 49 | 1 | 87.6% |
 <!-- mutation:end -->
