@@ -15,7 +15,6 @@ import gleam/result
 import gleam/string
 import metamon
 import metamon/generator.{type Generator}
-import metamon/generator/range
 import textmetrics
 
 // ---------- generators ----------
@@ -25,7 +24,7 @@ import textmetrics
 fn lines_generator() -> Generator(List(String)) {
   generator.list_of(
     generator.element_of(["a", "b", "c", "d", "", "a b", "}"]),
-    range.constant(0, 14),
+    length: generator.range(from: 0, to: 14),
   )
 }
 
@@ -33,7 +32,7 @@ fn input_generator() -> Generator(#(List(String), List(String), Int)) {
   generator.tuple3(
     lines_generator(),
     lines_generator(),
-    generator.int(range.constant(0, 4)),
+    generator.int(generator.range(from: 0, to: 4)),
   )
 }
 
@@ -311,20 +310,16 @@ fn render(script: List(textmetrics.Edit(String)), context: Int) -> String {
 pub fn to_unified_of_myers_applies_back_to_new_test() -> Nil {
   metamon.forall(input_generator(), fn(input) {
     let #(old, new, context) = input
-    textmetrics.myers(old, new)
-    |> render(context)
-    |> apply(old)
-    == Ok(new)
+    let patch = render(textmetrics.myers(old, new), context)
+    assert apply(patch, old) == Ok(new)
   })
 }
 
 pub fn to_unified_of_patience_applies_back_to_new_test() -> Nil {
   metamon.forall(input_generator(), fn(input) {
     let #(old, new, context) = input
-    textmetrics.patience(old, new)
-    |> render(context)
-    |> apply(old)
-    == Ok(new)
+    let patch = render(textmetrics.patience(old, new), context)
+    assert apply(patch, old) == Ok(new)
   })
 }
 
@@ -342,9 +337,8 @@ pub fn applier_inserts_into_an_empty_file_test() -> Nil {
 pub fn to_unified_shows_minimal_context_test() -> Nil {
   metamon.forall(input_generator(), fn(input) {
     let #(old, new, context) = input
-    textmetrics.myers(old, new)
-    |> render(context)
-    |> context_is_minimal(context)
+    let patch = render(textmetrics.myers(old, new), context)
+    assert context_is_minimal(patch, context)
   })
 }
 

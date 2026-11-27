@@ -209,3 +209,10 @@ pub fn sorensen_dice_counts_the_one_ngram_of_a_string_of_length_n_test() {
   let assert Ok(score) = textmetrics.sorensen_dice("ab", "abc", ngram_size: 2)
   approx_equal(score, 2.0 /. 3.0) |> should.be_true
 }
+
+pub fn sorensen_dice_counts_a_repeated_ngram_once_per_occurrence_test() -> Nil {
+  // "abab" has the bigrams ab, ba, ab and "ab" has ab: one shared bigram
+  // out of four.
+  assert textmetrics.sorensen_dice("abab", "ab", ngram_size: 2) == Ok(0.5)
+  assert textmetrics.sorensen_dice("abab", "abab", ngram_size: 2) == Ok(1.0)
+}

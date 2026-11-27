@@ -8,12 +8,11 @@ import gleam/string
 import legacy/v0_9_0
 import metamon
 import metamon/generator.{type Generator}
-import metamon/generator/range
 import textmetrics
 import textmetrics/internal/unicode
 
 fn config() -> metamon.Config {
-  metamon.default_config() |> metamon.with_runs_or_panic(400)
+  metamon.Config(..metamon.default_config(), runs: 400)
 }
 
 /// Lines over a small alphabet so that unique, repeated and moved
@@ -21,7 +20,7 @@ fn config() -> metamon.Config {
 fn lines_generator(max_length: Int) -> Generator(List(String)) {
   generator.list_of(
     generator.element_of(["a", "b", "c", "d", "e", "f", "g"]),
-    range.constant(0, max_length),
+    length: generator.range(from: 0, to: max_length),
   )
 }
 
@@ -47,7 +46,7 @@ fn edited_pair_generator() -> Generator(#(List(String), List(String))) {
 fn word_generator() -> Generator(String) {
   generator.list_of(
     generator.element_of(["a", "b", "c", "é", "e\u{0301}", "👍🏽"]),
-    range.constant(0, 10),
+    length: generator.range(from: 0, to: 10),
   )
   |> generator.map(string.concat)
 }
@@ -59,28 +58,28 @@ fn nfc_graphemes(text: String) -> List(String) {
 pub fn myers_matches_v0_9_0_test() {
   metamon.forall_with(config(), lines_pair_generator(14), fn(pair) {
     let #(old, new) = pair
-    textmetrics.myers(old, new) == v0_9_0.myers(old, new)
+    assert textmetrics.myers(old, new) == v0_9_0.myers(old, new)
   })
 }
 
 pub fn myers_matches_v0_9_0_on_edited_inputs_test() {
   metamon.forall_with(config(), edited_pair_generator(), fn(pair) {
     let #(old, new) = pair
-    textmetrics.myers(old, new) == v0_9_0.myers(old, new)
+    assert textmetrics.myers(old, new) == v0_9_0.myers(old, new)
   })
 }
 
 pub fn patience_matches_v0_9_0_test() {
   metamon.forall_with(config(), lines_pair_generator(14), fn(pair) {
     let #(old, new) = pair
-    textmetrics.patience(old, new) == v0_9_0.patience(old, new)
+    assert textmetrics.patience(old, new) == v0_9_0.patience(old, new)
   })
 }
 
 pub fn patience_matches_v0_9_0_on_edited_inputs_test() {
   metamon.forall_with(config(), edited_pair_generator(), fn(pair) {
     let #(old, new) = pair
-    textmetrics.patience(old, new) == v0_9_0.patience(old, new)
+    assert textmetrics.patience(old, new) == v0_9_0.patience(old, new)
   })
 }
 
@@ -91,7 +90,7 @@ fn wide_lines_generator() -> Generator(List(String)) {
     generator.element_of([
       "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n",
     ]),
-    range.constant(0, 40),
+    length: generator.range(from: 0, to: 40),
   )
 }
 
@@ -101,7 +100,7 @@ pub fn patience_matches_v0_9_0_on_wide_inputs_test() {
     generator.tuple2(wide_lines_generator(), wide_lines_generator()),
     fn(pair) {
       let #(old, new) = pair
-      textmetrics.patience(old, new) == v0_9_0.patience(old, new)
+      assert textmetrics.patience(old, new) == v0_9_0.patience(old, new)
     },
   )
 }
@@ -109,14 +108,16 @@ pub fn patience_matches_v0_9_0_on_wide_inputs_test() {
 pub fn lcs_sequence_matches_v0_9_0_test() {
   metamon.forall_with(config(), lines_pair_generator(14), fn(pair) {
     let #(a, b) = pair
-    textmetrics.longest_common_subsequence(a, b) == v0_9_0.lcs_sequence(a, b)
+    assert textmetrics.longest_common_subsequence(a, b)
+      == v0_9_0.lcs_sequence(a, b)
   })
 }
 
 pub fn lcs_sequence_matches_v0_9_0_on_edited_inputs_test() {
   metamon.forall_with(config(), edited_pair_generator(), fn(pair) {
     let #(a, b) = pair
-    textmetrics.longest_common_subsequence(a, b) == v0_9_0.lcs_sequence(a, b)
+    assert textmetrics.longest_common_subsequence(a, b)
+      == v0_9_0.lcs_sequence(a, b)
   })
 }
 
@@ -126,8 +127,8 @@ pub fn damerau_levenshtein_matches_v0_9_0_test() {
     generator.tuple2(word_generator(), word_generator()),
     fn(pair) {
       let #(a, b) = pair
-      textmetrics.damerau_levenshtein(a, b)
-      == v0_9_0.damerau_levenshtein(nfc_graphemes(a), nfc_graphemes(b))
+      assert textmetrics.damerau_levenshtein(a, b)
+        == v0_9_0.damerau_levenshtein(nfc_graphemes(a), nfc_graphemes(b))
     },
   )
 }
@@ -138,8 +139,8 @@ pub fn osa_matches_v0_9_0_test() {
     generator.tuple2(word_generator(), word_generator()),
     fn(pair) {
       let #(a, b) = pair
-      textmetrics.optimal_string_alignment(a, b)
-      == v0_9_0.osa(nfc_graphemes(a), nfc_graphemes(b))
+      assert textmetrics.optimal_string_alignment(a, b)
+        == v0_9_0.osa(nfc_graphemes(a), nfc_graphemes(b))
     },
   )
 }
@@ -150,7 +151,8 @@ pub fn jaro_matches_v0_9_0_test() {
     generator.tuple2(word_generator(), word_generator()),
     fn(pair) {
       let #(a, b) = pair
-      textmetrics.jaro(a, b) == v0_9_0.jaro(nfc_graphemes(a), nfc_graphemes(b))
+      assert textmetrics.jaro(a, b)
+        == v0_9_0.jaro(nfc_graphemes(a), nfc_graphemes(b))
     },
   )
 }
@@ -166,14 +168,14 @@ fn sentence_text_generator() -> Generator(String) {
       "Jan", "x1", "3", ".", ".", ".", "!", "?", " ", " ", ",", "-", "\n",
       "Then", "ph", "D",
     ]),
-    range.constant(0, 30),
+    length: generator.range(from: 0, to: 30),
   )
   |> generator.map(string.concat)
 }
 
 pub fn sentences_matches_v0_9_0_test() {
   metamon.forall_with(config(), sentence_text_generator(), fn(text) {
-    textmetrics.count_sentences(text) == v0_9_0.sentences(text)
+    assert textmetrics.count_sentences(text) == v0_9_0.sentences(text)
   })
 }
 
@@ -182,7 +184,7 @@ pub fn sentences_matches_v0_9_0_test() {
 fn long_word_generator() -> Generator(String) {
   generator.list_of(
     generator.element_of(["a", "b", "c"]),
-    range.constant(0, 40),
+    length: generator.range(from: 0, to: 40),
   )
   |> generator.map(string.concat)
 }
@@ -194,11 +196,11 @@ pub fn legacy_distances_and_jaro_match_on_long_words_test() {
     fn(pair) {
       let #(a, b) = pair
       let #(graphemes_a, graphemes_b) = #(nfc_graphemes(a), nfc_graphemes(b))
-      textmetrics.damerau_levenshtein(a, b)
-      == v0_9_0.damerau_levenshtein(graphemes_a, graphemes_b)
-      && textmetrics.optimal_string_alignment(a, b)
-      == v0_9_0.osa(graphemes_a, graphemes_b)
-      && textmetrics.jaro(a, b) == v0_9_0.jaro(graphemes_a, graphemes_b)
+      assert textmetrics.damerau_levenshtein(a, b)
+        == v0_9_0.damerau_levenshtein(graphemes_a, graphemes_b)
+      assert textmetrics.optimal_string_alignment(a, b)
+        == v0_9_0.osa(graphemes_a, graphemes_b)
+      assert textmetrics.jaro(a, b) == v0_9_0.jaro(graphemes_a, graphemes_b)
     },
   )
 }

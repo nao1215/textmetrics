@@ -7,14 +7,10 @@
 //// Unicode edge cases (emoji ZWJ, NFC vs NFD, Hangul jamo, regional
 //// indicators, skin-tone modifiers) are seeded via `with_examples`.
 
-import gleeunit/should
-
 import gleam/list
 import gleam/string
 import metamon
 import metamon/generator
-import metamon/generator/range
-import metamon/transform
 import textmetrics.{Delete, Equal, Insert}
 
 // ---------------------------------------------------------------------
@@ -45,7 +41,10 @@ const unicode_examples: List(String) = [
 ]
 
 fn small_unicode_string() -> generator.Generator(String) {
-  generator.string_unicode(range.constant(0, 6))
+  generator.string(
+    of: generator.Unicode,
+    length: generator.range(from: 0, to: 6),
+  )
   |> generator.with_examples(unicode_examples)
 }
 
@@ -81,8 +80,11 @@ const line_examples: List(List(String)) = [
 
 fn small_line_list() -> generator.Generator(List(String)) {
   generator.list_of(
-    generator.string_alphanumeric(range.constant(0, 3)),
-    range.constant(0, 5),
+    generator.string(
+      of: generator.Alphanumeric,
+      length: generator.range(from: 0, to: 3),
+    ),
+    length: generator.range(from: 0, to: 5),
   )
   // Script elements are single lines; `to_unified` rejects line feeds.
   |> generator.map(list.map(_, string.replace(_, "\n", "")))
@@ -98,10 +100,13 @@ fn small_line_pair() -> generator.Generator(#(List(String), List(String))) {
 // because combining marks attach to different bases after reversal —
 // the grapheme count and content can change. So we operate on already-
 // extracted grapheme lists when asserting invariance under reverse.
-fn pair_list_reverse_t() -> transform.Transform(#(List(String), List(String))) {
-  transform.new("pair_list_reverse", fn(p: #(List(String), List(String))) {
-    #(list.reverse(p.0), list.reverse(p.1))
-  })
+fn pair_list_reverse_t() -> metamon.Transform(#(List(String), List(String))) {
+  metamon.Transform(
+    name: "pair_list_reverse",
+    apply: fn(p: #(List(String), List(String))) {
+      #(list.reverse(p.0), list.reverse(p.1))
+    },
+  )
 }
 
 // ---------------------------------------------------------------------
@@ -113,7 +118,7 @@ pub fn myers_recover_old_test() {
   metamon.forall(small_grapheme_list_pair(), fn(p) {
     let #(old, new) = p
     let script = textmetrics.myers(old, new)
-    textmetrics.recover_old(script) == old
+    assert textmetrics.recover_old(script) == old
   })
 }
 
@@ -121,7 +126,7 @@ pub fn myers_recover_new_test() {
   metamon.forall(small_grapheme_list_pair(), fn(p) {
     let #(old, new) = p
     let script = textmetrics.myers(old, new)
-    textmetrics.recover_new(script) == new
+    assert textmetrics.recover_new(script) == new
   })
 }
 
@@ -129,7 +134,7 @@ pub fn patience_recover_old_test() {
   metamon.forall(small_line_pair(), fn(p) {
     let #(old, new) = p
     let script = textmetrics.patience(old, new)
-    textmetrics.recover_old(script) == old
+    assert textmetrics.recover_old(script) == old
   })
 }
 
@@ -137,7 +142,7 @@ pub fn patience_recover_new_test() {
   metamon.forall(small_line_pair(), fn(p) {
     let #(old, new) = p
     let script = textmetrics.patience(old, new)
-    textmetrics.recover_new(script) == new
+    assert textmetrics.recover_new(script) == new
   })
 }
 
@@ -155,7 +160,7 @@ pub fn myers_optimality_test() {
       + list.length(new)
       - 2
       * textmetrics.longest_common_subsequence_length(old, new)
-    textmetrics.edit_cost(script) == expected
+    assert textmetrics.edit_cost(script) == expected
   })
 }
 
@@ -180,7 +185,7 @@ pub fn myers_script_old_count_test() {
     let script = textmetrics.myers(old, new)
     let equals = count_kind(script, "equal")
     let deletes = count_kind(script, "delete")
-    list.length(old) == equals + deletes
+    assert list.length(old) == equals + deletes
   })
 }
 
@@ -190,7 +195,7 @@ pub fn myers_script_new_count_test() {
     let script = textmetrics.myers(old, new)
     let equals = count_kind(script, "equal")
     let inserts = count_kind(script, "insert")
-    list.length(new) == equals + inserts
+    assert list.length(new) == equals + inserts
   })
 }
 
@@ -201,22 +206,22 @@ pub fn myers_script_new_count_test() {
 pub fn lcs_length_symmetry_test() {
   metamon.forall(small_grapheme_list_pair(), fn(p) {
     let #(a, b) = p
-    textmetrics.longest_common_subsequence_length(a, b)
-    == textmetrics.longest_common_subsequence_length(b, a)
+    assert textmetrics.longest_common_subsequence_length(a, b)
+      == textmetrics.longest_common_subsequence_length(b, a)
   })
 }
 
 pub fn lcs_sequence_length_matches_test() {
   metamon.forall(small_grapheme_list_pair(), fn(p) {
     let #(a, b) = p
-    list.length(textmetrics.longest_common_subsequence(a, b))
-    == textmetrics.longest_common_subsequence_length(a, b)
+    assert list.length(textmetrics.longest_common_subsequence(a, b))
+      == textmetrics.longest_common_subsequence_length(a, b)
   })
 }
 
 pub fn lcs_idempotence_self_test() {
   metamon.forall(small_grapheme_list(), fn(a) {
-    textmetrics.longest_common_subsequence(a, a) == a
+    assert textmetrics.longest_common_subsequence(a, a) == a
   })
 }
 
@@ -235,7 +240,7 @@ pub fn levenshtein_list_invariant_under_reverse_test() {
     )
   metamon.forall_morph(
     small_grapheme_list_pair(),
-    mr,
+    [mr],
     fn(p: #(List(String), List(String))) {
       textmetrics.levenshtein_list(p.0, p.1)
     },
@@ -245,21 +250,21 @@ pub fn levenshtein_list_invariant_under_reverse_test() {
 // Distance symmetry: d(a, b) == d(b, a).
 pub fn levenshtein_symmetry_test() {
   let mr = metamon.commutativity_of(name: "levenshtein_symmetric")
-  metamon.forall_morph(small_unicode_pair(), mr, fn(p: #(String, String)) {
+  metamon.forall_morph(small_unicode_pair(), [mr], fn(p: #(String, String)) {
     textmetrics.levenshtein(p.0, p.1)
   })
 }
 
 pub fn damerau_symmetry_test() {
   let mr = metamon.commutativity_of(name: "damerau_symmetric")
-  metamon.forall_morph(small_unicode_pair(), mr, fn(p: #(String, String)) {
+  metamon.forall_morph(small_unicode_pair(), [mr], fn(p: #(String, String)) {
     textmetrics.damerau_levenshtein(p.0, p.1)
   })
 }
 
 pub fn osa_symmetry_test() {
   let mr = metamon.commutativity_of(name: "osa_symmetric")
-  metamon.forall_morph(small_unicode_pair(), mr, fn(p: #(String, String)) {
+  metamon.forall_morph(small_unicode_pair(), [mr], fn(p: #(String, String)) {
     textmetrics.optimal_string_alignment(p.0, p.1)
   })
 }
@@ -267,7 +272,7 @@ pub fn osa_symmetry_test() {
 // Identity: levenshtein(a, a) == 0.
 pub fn levenshtein_identity_test() {
   metamon.forall(small_unicode_string(), fn(a) {
-    textmetrics.levenshtein(a, a) == 0
+    assert textmetrics.levenshtein(a, a) == 0
   })
 }
 
@@ -278,18 +283,13 @@ pub fn levenshtein_identity_test() {
 pub fn diff_self_only_equals_test() {
   metamon.forall(small_grapheme_list(), fn(a) {
     let script = textmetrics.myers(a, a)
-    list.all(script, fn(e) {
-      case e {
-        Equal(_) -> True
-        _ -> False
-      }
-    })
+    assert script == list.map(a, Equal)
   })
 }
 
 pub fn diff_self_recover_old_test() {
   metamon.forall(small_grapheme_list(), fn(a) {
-    textmetrics.recover_old(textmetrics.myers(a, a)) == a
+    assert textmetrics.recover_old(textmetrics.myers(a, a)) == a
   })
 }
 
@@ -299,13 +299,13 @@ pub fn diff_self_recover_old_test() {
 
 pub fn search_closest_self_test() {
   metamon.forall(small_unicode_string(), fn(a) {
-    { textmetrics.did_you_mean(a, [a], 0) |> list.first } == Ok(a)
+    assert { textmetrics.did_you_mean(a, [a], 0) |> list.first } == Ok(a)
   })
 }
 
 pub fn search_did_you_mean_self_test() {
   metamon.forall(small_unicode_string(), fn(a) {
-    textmetrics.did_you_mean(a, [a], 0) == [a]
+    assert textmetrics.did_you_mean(a, [a], 0) == [a]
   })
 }
 
@@ -315,39 +315,27 @@ pub fn search_did_you_mean_self_test() {
 
 pub fn lcs_empty_left_test() {
   metamon.forall(small_grapheme_list(), fn(a) {
-    textmetrics.longest_common_subsequence([], a) == []
+    assert textmetrics.longest_common_subsequence([], a) == []
   })
 }
 
 pub fn lcs_empty_right_test() {
   metamon.forall(small_grapheme_list(), fn(a) {
-    textmetrics.longest_common_subsequence(a, []) == []
+    assert textmetrics.longest_common_subsequence(a, []) == []
   })
 }
 
 pub fn diff_empty_old_is_all_inserts_test() {
   metamon.forall(small_grapheme_list(), fn(a) {
     let script = textmetrics.myers([], a)
-    list.all(script, fn(e) {
-      case e {
-        Insert(_) -> True
-        _ -> False
-      }
-    })
-    && list.length(script) == list.length(a)
+    assert script == list.map(a, Insert)
   })
 }
 
 pub fn diff_empty_new_is_all_deletes_test() {
   metamon.forall(small_grapheme_list(), fn(a) {
     let script = textmetrics.myers(a, [])
-    list.all(script, fn(e) {
-      case e {
-        Delete(_) -> True
-        _ -> False
-      }
-    })
-    && list.length(script) == list.length(a)
+    assert script == list.map(a, Delete)
   })
 }
 
@@ -358,17 +346,13 @@ pub fn diff_empty_new_is_all_deletes_test() {
 pub fn to_unified_no_changes_is_empty_test() {
   metamon.forall(small_line_list(), fn(a) {
     let script = textmetrics.myers(a, a)
-
-    {
-      textmetrics.to_unified(
+    assert textmetrics.to_unified(
         script,
         old_name: "a",
         new_name: "b",
         context_lines: 3,
       )
-      |> should.be_ok
-    }
-    == ""
+      == Ok("")
   })
 }
 
@@ -382,7 +366,7 @@ pub fn patience_script_old_count_test() {
     let script = textmetrics.patience(old, new)
     let equals = count_kind(script, "equal")
     let deletes = count_kind(script, "delete")
-    list.length(old) == equals + deletes
+    assert list.length(old) == equals + deletes
   })
 }
 
@@ -392,7 +376,7 @@ pub fn patience_script_new_count_test() {
     let script = textmetrics.patience(old, new)
     let equals = count_kind(script, "equal")
     let inserts = count_kind(script, "insert")
-    list.length(new) == equals + inserts
+    assert list.length(new) == equals + inserts
   })
 }
 
@@ -402,7 +386,7 @@ pub fn patience_cost_at_least_myers_test() {
     let #(old, new) = p
     let p_cost = textmetrics.edit_cost(textmetrics.patience(old, new))
     let m_cost = textmetrics.edit_cost(textmetrics.myers(old, new))
-    p_cost >= m_cost
+    assert p_cost >= m_cost
   })
 }
 
@@ -417,7 +401,7 @@ pub fn lcs_length_upper_bound_test() {
       True -> list.length(a)
       False -> list.length(b)
     }
-    textmetrics.longest_common_subsequence_length(a, b) <= n
+    assert textmetrics.longest_common_subsequence_length(a, b) <= n
   })
 }
 
@@ -429,16 +413,19 @@ pub fn lcs_length_upper_bound_test() {
 pub fn levenshtein_non_negative_test() {
   metamon.forall(small_unicode_pair(), fn(p) {
     let #(a, b) = p
-    textmetrics.levenshtein(a, b) >= 0
+    assert textmetrics.levenshtein(a, b) >= 0
   })
 }
 
 // Equivariance of levenshtein_list under common-prefix injection:
 // prepending the same x to both inputs leaves the distance unchanged.
-fn pair_prepend_x_t() -> transform.Transform(#(List(String), List(String))) {
-  transform.new("pair_prepend_x", fn(p: #(List(String), List(String))) {
-    #(["x", ..p.0], ["x", ..p.1])
-  })
+fn pair_prepend_x_t() -> metamon.Transform(#(List(String), List(String))) {
+  metamon.Transform(
+    name: "pair_prepend_x",
+    apply: fn(p: #(List(String), List(String))) {
+      #(["x", ..p.0], ["x", ..p.1])
+    },
+  )
 }
 
 pub fn levenshtein_list_invariant_under_common_prefix_test() {
@@ -449,7 +436,7 @@ pub fn levenshtein_list_invariant_under_common_prefix_test() {
     )
   metamon.forall_morph(
     small_grapheme_list_pair(),
-    mr,
+    [mr],
     fn(p: #(List(String), List(String))) {
       textmetrics.levenshtein_list(p.0, p.1)
     },
@@ -467,7 +454,7 @@ pub fn lcs_length_common_prefix_growth_test() {
         list.append(prefix, b),
       )
     let without = textmetrics.longest_common_subsequence_length(a, b)
-    with_prefix >= list.length(prefix) + without
+    assert with_prefix >= list.length(prefix) + without
     // ">=" because spurious matches between prefix and a/b can only
     // increase the LCS — strict equality requires prefix items absent
     // from a, b, which we don't enforce in random graphemes.
@@ -483,6 +470,8 @@ pub fn did_you_mean_results_within_distance_test() {
   metamon.forall(small_unicode_string(), fn(query) {
     let max_d = 2
     let results = textmetrics.did_you_mean(query, candidate_pool, max_d)
-    list.all(results, fn(c) { textmetrics.levenshtein(query, c) <= max_d })
+    list.each(results, fn(c) {
+      assert textmetrics.levenshtein(query, c) <= max_d
+    })
   })
 }

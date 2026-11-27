@@ -10,7 +10,6 @@ import gleam/list
 import gleam/string
 import metamon
 import metamon/generator.{type Generator}
-import metamon/generator/range
 import textmetrics
 import textmetrics/internal/unicode
 
@@ -19,7 +18,7 @@ import textmetrics/internal/unicode
 fn word_generator() -> Generator(String) {
   generator.list_of(
     generator.element_of(["a", "b", "c", "é", "e\u{0301}", "👍🏽"]),
-    range.constant(0, 6),
+    length: generator.range(from: 0, to: 6),
   )
   |> generator.map(string.concat)
 }
@@ -89,16 +88,16 @@ fn naive_lcs_length(a: List(String), b: List(String)) -> Int {
 pub fn levenshtein_matches_the_recursive_definition_test() -> Nil {
   metamon.forall(pair_generator(), fn(pair) {
     let #(a, b) = pair
-    textmetrics.levenshtein(a, b)
-    == naive_levenshtein(nfc_graphemes(a), nfc_graphemes(b))
+    assert textmetrics.levenshtein(a, b)
+      == naive_levenshtein(nfc_graphemes(a), nfc_graphemes(b))
   })
 }
 
 pub fn osa_matches_the_recursive_definition_test() -> Nil {
   metamon.forall(pair_generator(), fn(pair) {
     let #(a, b) = pair
-    textmetrics.optimal_string_alignment(a, b)
-    == naive_osa(nfc_graphemes(a), nfc_graphemes(b))
+    assert textmetrics.optimal_string_alignment(a, b)
+      == naive_osa(nfc_graphemes(a), nfc_graphemes(b))
   })
 }
 
@@ -110,9 +109,9 @@ pub fn damerau_levenshtein_is_bounded_by_osa_and_levenshtein_test() -> Nil {
     let #(a, b) = pair
     let dl = textmetrics.damerau_levenshtein(a, b)
     let lev = textmetrics.levenshtein(a, b)
-    dl <= textmetrics.optimal_string_alignment(a, b)
-    && dl <= lev
-    && 2 * dl >= lev
+    assert dl <= textmetrics.optimal_string_alignment(a, b)
+    assert dl <= lev
+    assert 2 * dl >= lev
   })
 }
 
@@ -121,8 +120,8 @@ pub fn lcs_length_matches_the_recursive_definition_test() -> Nil {
     let #(a, b) = pair
     let ga = string.to_graphemes(a)
     let gb = string.to_graphemes(b)
-    textmetrics.longest_common_subsequence_length(ga, gb)
-    == naive_lcs_length(ga, gb)
+    assert textmetrics.longest_common_subsequence_length(ga, gb)
+      == naive_lcs_length(ga, gb)
   })
 }
 
@@ -132,9 +131,9 @@ pub fn lcs_sequence_is_a_common_subsequence_of_maximal_length_test() -> Nil {
     let ga = string.to_graphemes(a)
     let gb = string.to_graphemes(b)
     let seq = textmetrics.longest_common_subsequence(ga, gb)
-    is_subsequence(seq, ga)
-    && is_subsequence(seq, gb)
-    && list.length(seq) == naive_lcs_length(ga, gb)
+    assert is_subsequence(seq, ga)
+    assert is_subsequence(seq, gb)
+    assert list.length(seq) == naive_lcs_length(ga, gb)
   })
 }
 
