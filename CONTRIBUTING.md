@@ -83,7 +83,10 @@ curl -LfsS https://www.unicode.org/Public/17.0.0/ucd/auxiliary/SentenceBreakProp
 python3 scripts/gen_unicode_category.py --unicode-data /tmp/UnicodeData-17.0.0.txt --word-break-property /tmp/WordBreakProperty-17.0.0.txt --sentence-break-property /tmp/SentenceBreakProperty-17.0.0.txt
 python3 scripts/gen_unicode_category.py --unicode-data /tmp/UnicodeData-17.0.0.txt --word-break-property /tmp/WordBreakProperty-17.0.0.txt --sentence-break-property /tmp/SentenceBreakProperty-17.0.0.txt --check
 python3 -m unittest discover -s scripts -p 'test_gen_unicode_*.py'
+python3 scripts/gen_unicode_category_fixture.py --unicode-data /tmp/UnicodeData-17.0.0.txt --word-break-property /tmp/WordBreakProperty-17.0.0.txt --sentence-break-property /tmp/SentenceBreakProperty-17.0.0.txt
 ```
+
+`scripts/gen_unicode_category_fixture.py` writes `test/unicode_category_ranges.gleam`, the expected ranges that `test/unicode_category_table_test.gleam` checks the generated table against. It parses the inputs with its own code, so regenerate both files from the same data; `--check` compares without writing.
 
 The generator checks the SHA-256 of each input, expands First/Last ranges, and treats unlisted code points as unassigned. It replaces the output only after parsing and formatting succeed; `--check` compares without replacing it. It does not use Python's Unicode database or download data. The fixed tables are separate from the target runtime's NFC normalization and grapheme segmentation.
 

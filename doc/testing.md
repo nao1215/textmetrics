@@ -28,6 +28,8 @@ The Unicode regressions cover unassigned code points, noncharacters, First/Last 
 
 `scripts/test_gen_unicode_category.py` tests the fixed-data generator, malformed ranges, and output preservation and temporary-file cleanup on failure. The regeneration commands are in CONTRIBUTING.md. After the Unicode 17.0 update, every generated function was compared with the fixed Unicode data over all code points on both targets; there were no differences.
 
+`test/unicode_category_table_test.gleam` keeps that comparison in the suite at the edges of every range. `scripts/gen_unicode_category_fixture.py` reads the same hash-checked UCD files with its own parser and writes `test/unicode_category_ranges.gleam`, the plain sorted code point ranges where each function of the generated table is True. For every range the test checks that the first, middle, and last code points are in it, and that the code points just outside it and in the middle of the gap before the next range are not. A shifted bound in the table fails the test.
+
 The API validation tests cover Jaro-Winkler and unified diff error priority before empty or unchanged input shortcuts. Raw readability fixtures include values outside display ranges; separate assertions apply the caller's clamp. Generic list tests use integers and records as well as strings.
 
 ## Nightly runs
@@ -36,7 +38,7 @@ The API validation tests cover Jaro-Winkler and unified diff error priority befo
 
 ## Coverage
 
-`gleam run -m metamon/mutation -- coverage` (`just coverage`) runs the tests on the Erlang target with every module under `src/` measured and writes `build/coverage/lcov.info`. It needs Gleam 1.19 or later, newer than the floor the package supports, because older compilers do not keep the Gleam line numbers that `cover` reports. Run `gleam build --target erlang` first (`just coverage` does), since `gleam run -m` of a dependency module does not compile the package. `.github/workflows/coverage.yml` reports it with octocov on pull requests and main. The first run (2026-11-28) reached 51.9% of the lines (954 of 1839): 96.1% of `src/textmetrics.gleam` (810 of 843) and 14.5% of the generated table `src/textmetrics/internal/unicode_category.gleam` (144 of 996), whose ranges are only reached by text in those categories.
+`gleam run -m metamon/mutation -- coverage` (`just coverage`) runs the tests on the Erlang target with every module under `src/` measured and writes `build/coverage/lcov.info`. It needs Gleam 1.19 or later, newer than the floor the package supports, because older compilers do not keep the Gleam line numbers that `cover` reports. Run `gleam build --target erlang` first (`just coverage` does), since `gleam run -m` of a dependency module does not compile the package. `.github/workflows/coverage.yml` reports it with octocov on pull requests and main. The first run (2026-11-28) reached 51.9% of the lines (954 of 1839): 96.1% of `src/textmetrics.gleam` (810 of 843) and 14.5% of the generated table `src/textmetrics/internal/unicode_category.gleam` (144 of 996), whose ranges are only reached by text in those categories. After `test/unicode_category_table_test.gleam` was added, the total is 98.2% (1805 of 1839): the generated table is at 100% (996 of 996) and `src/textmetrics.gleam` at 96.0% (809 of 843; property tests draw new inputs on each run, so this moves by a line or so). Most of the lines left in `src/textmetrics.gleam` are fallback branches for empty lists and failed lookups that the callers never reach.
 
 ## Mutation testing
 
