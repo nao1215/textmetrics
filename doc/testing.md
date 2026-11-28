@@ -34,6 +34,10 @@ The API validation tests cover Jaro-Winkler and unified diff error priority befo
 
 `.github/workflows/nightly-property.yml` runs the whole suite ten times with `METAMON_RUNS_MULTIPLIER=10`, each pass with a new seed. A failure report prints its seed, so the case can be replayed with `Config(..default_config(), seed: Some(seed))` and kept as a regression test.
 
+## Coverage
+
+`gleam run -m metamon/mutation -- coverage` (`just coverage`) runs the tests on the Erlang target with every module under `src/` measured and writes `build/coverage/lcov.info`. It needs Gleam 1.19 or later, newer than the floor the package supports, because older compilers do not keep the Gleam line numbers that `cover` reports. Run `gleam build --target erlang` first (`just coverage` does), since `gleam run -m` of a dependency module does not compile the package. `.github/workflows/coverage.yml` reports it with octocov on pull requests and main. The first run (2026-11-28) reached 51.9% of the lines (954 of 1839): 96.1% of `src/textmetrics.gleam` (810 of 843) and 14.5% of the generated table `src/textmetrics/internal/unicode_category.gleam` (144 of 996), whose ranges are only reached by text in those categories.
+
 ## Mutation testing
 
 `gleam run -m metamon/mutation` changes one operator, `!` or boolean literal in a module under `src/` at a time and runs `gleam test --target erlang` on each change. `src/textmetrics/internal/unicode_category.gleam` is left out (`--exclude` in `.github/workflows/mutation.yml` and the justfile): it is generated from the Unicode data by `scripts/gen_unicode_category.py`, its 3,162 mutants are range bounds of that table, and they would make a full run take hours. `.github/workflows/mutation.yml` mutates the modules a pull request changes and fails on a survivor that `doc/mutation/baseline.json` does not list; the weekly run mutates every module. `just mutation` runs everything and `just mutation-record` writes the baseline.
